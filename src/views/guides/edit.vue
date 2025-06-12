@@ -14,7 +14,7 @@
         </el-form-item>
 
         <!-- 封面图片 -->
-        <el-form-item label="封面图片" prop="coverImage">
+        <!-- <el-form-item label="封面图片" prop="coverImage">
           <el-upload class="cover-uploader" action="/api/upload" :show-file-list="false"
             :on-success="handleCoverSuccess">
             <el-image v-if="blogForm.coverImage" :src="blogForm.coverImage" fit="cover" class="cover-image" />
@@ -23,7 +23,7 @@
             </el-icon>
           </el-upload>
           <div class="upload-tip">建议尺寸：1200x675px</div>
-        </el-form-item>
+        </el-form-item> -->
 
 
 
@@ -48,44 +48,29 @@
         <!-- 关联景点 -->
         <el-form-item label="关联景点" prop="spotIds">
           <div class="spot-selection-container">
-            <!-- 搜索框 -->
-            <el-input
-              v-model="spotSearch"
-              placeholder="搜索景点..."
-              clearable
-              class="spot-search"
+            <!-- 搜索和选择景点 -->
+            <el-select
+              v-model="selectedSpotIds"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择关联景点"
+              style="width: 100%"
+              @change="handleSpotSelectionChange"
             >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-
-            <!-- 景点列表 -->
-            <div class="spot-list">
-              <div
-                v-for="spot in filteredSpots"
+              <el-option
+                v-for="spot in favoriteSpots"
                 :key="spot.id"
-                class="spot-card"
-                :class="{ selected: isSpotSelected(spot.id) }"
-                @click.stop="toggleSpotSelection(spot)"
-              >
-                <div class="spot-info">
-                  <div class="spot-name">{{ spot.name }}</div>
-                </div>
-                <el-button
-                  size="small"
-                  :type="isSpotSelected(spot.id) ? 'danger' : 'primary'"
-                  
-                >
-                  {{ isSpotSelected(spot.id) ? '移除' : '选择' }}
-                </el-button>
-              </div>
-            </div>
-
-            <!-- 已选景点 -->
-            <div class="selected-spots" v-if="blogForm.spotIds.length > 0">
-              <div class="selected-title">已选景点 ({{ blogForm.spotIds.length }}/5):</div>
-              <div class="tag-container">
+                :label="spot.name"
+                :value="spot.id"
+              />
+            </el-select>
+            
+            <!-- 已选景点展示 -->
+            <!-- <div class="selected-spots" v-if="blogForm.spotIds.length > 0"><!-- 
+              <div class="selected-title">已选景点 ({{ blogForm.spotIds.length }}/5):</div> -->
+              <!-- <div class="tag-container">
                 <el-tag
                   v-for="id in blogForm.spotIds"
                   :key="id"
@@ -94,10 +79,10 @@
                   type="success"
                   effect="plain"
                 >
-                  {{ getSpotName(id) }}
-                </el-tag>
-              </div>
-            </div>
+                  {{ getSpotName(id) }} -->
+                <!-- </el-tag> -->
+              <!-- </div> -->
+           <!--  </div>  -->
           </div>
         </el-form-item>
 
@@ -165,15 +150,15 @@ const getSpotName = (id) => {
 }
 const toggleSpotSelection = (spot) => {
   // 检查是否已达上限且不是取消选择
-  if (blogForm.value.spotIds.length >= 5 && 
-      !blogForm.value.spotIds.includes(String(spot.id))) {
+  if (blogForm.value.spotIds.length >= 5 &&
+    !blogForm.value.spotIds.includes(String(spot.id))) {
     ElMessage.warning('最多只能关联5个景点')
     return
   }
-  
+
   const spotId = String(spot.id)
   const index = blogForm.value.spotIds.indexOf(spotId)
-  
+
   if (index > -1) {
     blogForm.value.spotIds.splice(index, 1)
   } else {
@@ -186,13 +171,38 @@ const logSpotClick = (spotId) => {
   console.log('点击了景点:', spotId)
 }
 
+// 用于el-select的选中值
+const selectedSpotIds = ref([])
+
+// 处理景点选择变化
+const handleSpotSelectionChange = () => {
+  // 检查是否超过上限
+  if (selectedSpotIds.value.length > 5) {
+    ElMessage.warning('最多只能关联5个景点')
+    // 移除最后选择的项
+    // selectedSpotIds.value.pop()
+    selectedSpotIds.value = val.slice(0, 5)
+    return
+  }
+  
+  // 更新blogForm中的spotIds
+  blogForm.value.spotIds = selectedSpotIds.value.map(id => String(id))
+}
+
 // 移除已选景点
 const removeSpot = (id) => {
   if (!id) return
   
+  // 从blogForm中移除
   blogForm.value.spotIds = blogForm.value.spotIds
     .filter(spotId => spotId && spotId !== 'undefined' && spotId !== 'null')
-    .filter(spotId => spotId !== String(id)) // 确保类型一致
+    .filter(spotId => spotId !== String(id))
+  console.log(blogForm.value.spotIds)
+  // 同步更新selectedSpotIds
+  const index = selectedSpotIds.value.indexOf(id)
+  if (index > -1) {
+    selectedSpotIds.value.splice(index, 1)
+  }
 }
 
 // 调试观察spotIds变化
@@ -365,14 +375,14 @@ onMounted(async () => {
       // 1. 获取收藏列表
       const favorites = await attractionApi.getFavorites(userStore.userId)
       console.log('收藏景点ID:', favorites)
-      
+
       if (!Array.isArray(favorites)) {
         throw new Error('收藏数据格式错误')
       }
 
       // 2. 提取attractionId数组
       const attractionIds = favorites.map(f => f.attractionId)
-      
+
       // 3. 并行获取所有景点详情
       const attractions = await Promise.all(
         attractionIds.map(id =>
@@ -383,7 +393,7 @@ onMounted(async () => {
             })
         )
       )
-      
+
       // 4. 处理返回的数据格式
       favoriteSpots.value = attractions.map(att => ({
         id: String(att.id), // 确保id为字符串
@@ -392,13 +402,13 @@ onMounted(async () => {
       }))
       console.log('favoriteSpots loaded:', favoriteSpots.value)
       console.log('favoriteSpots loaded:', favoriteSpots.value)
-      
+
     } catch (error) {
       console.error('获取收藏景点失败:', error)
       favoriteSpots.value = []
     }
   }
-  
+
   // 如果是编辑模式，获取博客详情
   if (isEdit.value) {
     getBlogDetail(route.params.id)
@@ -580,5 +590,30 @@ onMounted(async () => {
     width: 100%;
     margin-bottom: 1rem;
   }
+}
+.spot-selection-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.selected-spots {
+  margin-top: 15px;
+  padding: 15px;
+  background-color: #f0f7ff;
+  border-radius: 8px;
+  border-left: 4px solid #409EFF;
+}
+
+.selected-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.tag-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>
