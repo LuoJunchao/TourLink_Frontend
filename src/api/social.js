@@ -151,6 +151,13 @@ class SocialApi {
     });
   }
 
+  // 获取点赞状态
+  getLikeStatus(blogId, userId) {
+    return request("/social/api/likes/status", {
+      params: { blogId, userId },
+    });
+  }
+
   // 浏览操作
   viewBlog(blogId, userId) {
     return request("/social/api/views", {
@@ -193,6 +200,16 @@ class SocialApi {
   // 获取用户博客列表
   getUserBlogs(userId) {
     return request(`/social/api/blogs/user/${userId}`);
+  }
+
+  getBlogsByIds(blogIds) {
+    return request("/social/api/blogs/batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(blogIds),
+    });
   }
 }
 

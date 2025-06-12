@@ -212,43 +212,45 @@ const loading = ref(false)
 
 // 修改getRecommendations函数
 const getRecommendations = async () => {
-  // 如果用户未登录，不获取推荐
   if (!isLoggedIn.value) return
-  
+
   try {
     loading.value = true
     const userId = userStore.userId
     console.log("获取推荐")
+
     const response = await fetch('http://localhost:8000/recommend_attractions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         user_id: userId,
         top_k_tags: 5,
-        top_k_attractions: 8,  // 限制为8个推荐景点
+        top_k_attractions: 8,
         alpha: 0.8
       })
     })
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
     const result = await response.json()
     console.log('推荐结果:', result.data)
-    
-    // 获取推荐景点的详细信息并替换popularSpots
-    if (result.data && result.data.length > 0) {
-      const attractionIds = result.data
-      const attractions = await attractionApi.getAttractionsByIds(attractionIds)
-      popularSpots.value = attractions || []
-    }
+
+    const attractionIds = result.data
+    const attractions = await Promise.all(
+      attractionIds.map(async id => {
+        try {
+          const res = await attractionApi.getAttractionById(id)
+          return res
+        } catch (err) {
+          console.error(`获取景点 ${id} 时出错:`, err)
+        }
+      })
+    )
+
+    popularSpots.value = attractions.filter(Boolean)
   } catch (error) {
     console.error('获取推荐失败:', error)
     ElMessage.error('获取推荐失败，将显示默认景点')
-    // 获取失败时回退到默认景点获取方式
     fetchAllSpots()
   } finally {
     loading.value = false

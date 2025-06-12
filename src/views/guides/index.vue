@@ -19,7 +19,7 @@ const searchType = ref('content')
 const filter = reactive({
   region: '',
   type: '',
-  sort: 'latest'
+  sort: 'viewCount'  // 默认按浏览量排序
 })
 
 // 分页
@@ -30,33 +30,6 @@ const loading = ref(false) // 添加加载状态
 
 // 攻略数据
 const guides = ref([])
-
-/* // 处理点赞
-const handleLike = async (guideId) => {
-  if (!userStore.isLoggedIn) {
-    ElMessage.warning('请先登录')
-    return
-  }
-  
-  try {
-    const guide = guides.value.find(g => g.id === guideId)
-    console.log(Number(guideId), userStore.userId,typeof String(userStore.userId));
-    if (guide) {
-      if (guide.isLiked) {
-        await socialApi.unlikeBlog(Number(guideId), String(userStore.userId))
-        guide.likes--
-      } else {
-        await socialApi.likeBlog(Number(guideId), String(userStore.userId))
-        guide.likes++
-      }
-      guide.isLiked = !guide.isLiked
-    }
-  } catch (error) {
-    console.error('点赞操作失败:', error)
-    ElMessage.error('操作失败，请稍后重试')
-  }
-} */
-
 
 // 查看攻略详情
 const viewGuideDetail = async (guideId) => {
@@ -109,6 +82,14 @@ const searchTypes = [
 
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
+// 排序选项
+const sortOptions = [
+  { value: 'viewCount', label: '最多浏览' },
+  { value: 'like', label: '最多点赞' },
+  { value: 'comment', label: '最多评论' },
+  { value: 'new', label: '最新发布' }
+]
+
 // 获取攻略数据的函数
 const fetchGuides = async (params = {}) => {
   loading.value = true
@@ -125,7 +106,7 @@ const fetchGuides = async (params = {}) => {
     } else {
       // 获取所有博客，同样传递分页参数
       response = await socialApi.getBlogRanking(
-        'ViewCount',
+        filter.sort,
         '',
         currentPage.value - 1,
       )
@@ -187,55 +168,154 @@ const handleCurrentChange = (page) => {
   fetchGuides()
 }
 
+// 处理排序变化
+const handleSortChange = (value) => {
+  filter.sort = value
+  currentPage.value = 1 // 重置到第一页
+  fetchGuides()
+}
+
 //获取推荐
 const getRecommendations = async () => {
   // 如果用户未登录，不获取推荐
-  if (!isLoggedIn.value) return
-  
+  if (!isLoggedIn.value) return;
+
   try {
-    loading.value = true
-    const userId = userStore.userId
-    console.log("获取推荐")
-    const response = await fetch('http://localhost:8000/recommend_blogs', {
-      method: 'POST',
+    loading.value = true;
+    const userId = userStore.userId;
+    console.log("获取推荐");
+    const response = await fetch("http://localhost:8000/recommend_blogs", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         user_id: userId,
         top_k_tags: 5,
-        top_k_attractions: 8,  // 限制为8个推荐景点
+        top_k_attractions: 8, // 限制为8个推荐景点
         alpha: 0.8
       })
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const result = await response.json()
-    console.log('推荐结果:', result.data)
-    
-    // 获取推荐景点的详细信息并替换popularSpots
+    const result = await response.json();
+    console.log("推荐结果:", result.data);
+
+    // 获取推荐景点的详细信息并替换 popularSpots
     if (result.data && result.data.length > 0) {
-      const attractionIds = result.data
-      const attractions = await socialApi.getBlogsByIds(attractionIds)
-      popularSpots.value = attractions || []
+      const attractionIds = result.data;
+      const attractions = await socialApi.getBlogsByIds(attractionIds);
+      guides.value = attractions || [];
     }
   } catch (error) {
-    console.error('获取推荐失败:', error)
-    ElMessage.error('获取推荐失败，将显示默认景点')
-    // 获取失败时回退到默认景点获取方式
-    fetchAllSpots()
+    console.error("获取推荐失败:", error);
+    ElMessage.error("获取推荐失败，将显示默认景点");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
+
+
+const fetchGuidesWithRecommendation = async (params = {}) => {
+  loading.value = true;
+  try {
+    let blogs = [];
+
+    // 先尝试推荐（仅登录用户）
+    if (isLoggedIn.value) {
+      try {
+        const userId = userStore.userId;
+        const response = await fetch("http://localhost:8000/recommend_blogs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            top_k_tags: 5,
+            top_k_attractions: 8,
+            alpha: 0.8
+          })
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const result = await response.json();
+
+        if (result.data && result.data.length > 0) {
+          console.log("推荐结果:", result.data);
+          blogs = await socialApi.getBlogsByIds(result.data);
+        } else {
+          console.warn("推荐为空，使用默认博客");
+        }
+      } catch (err) {
+        console.error("推荐失败:", err);
+      }
+    }
+
+    // 如果没有成功获取推荐，使用默认逻辑
+    if (blogs.length === 0) {
+      let response;
+      if (params.keyword) {
+        response = await socialApi.searchBlogs(
+          params.keyword,
+          params.searchType || searchType.value,
+          currentPage.value - 1
+        );
+      } else {
+        response = await socialApi.getBlogRanking(
+          "ViewCount",
+          "",
+          currentPage.value - 1
+        );
+      }
+      blogs = response.content || [];
+      total.value = response.totalElements || 0;
+    }
+
+    // 获取所有博客作者信息
+    const userPromises = blogs.map(blog =>
+      blog.userId
+        ? userApi.getUserInfo(blog.userId).catch(error => {
+            console.error(`获取用户 ${blog.userId} 信息失败:`, error);
+            return null;
+          })
+        : Promise.resolve(null)
+    );
+    const userInfos = await Promise.all(userPromises);
+
+    // 合并博客和用户信息
+    guides.value = blogs.map((blog, index) => {
+      const userInfo = userInfos[index];
+      return {
+        id: blog.blogId,
+        username: userInfo ? (userInfo.username || userInfo.name || "匿名用户") : "匿名用户",
+        userAvatar: userInfo ? (userInfo.avatar || "/src/assets/images/avatars/default.jpg") : "/src/assets/images/avatars/default.jpg",
+        publishTime: blog.publishTime ? new Date(blog.publishTime).toLocaleDateString() : "未知时间",
+        title: blog.title || "无标题",
+        content: blog.content ? blog.content.substring(0, 100) + "..." : "",
+        coverImage: blog.coverImage || "/src/assets/images/guides/default.jpg",
+        likes: blog.likeCount || 0,
+        comments: blog.commentCount || 0,
+        isLiked: blog.isLiked || false
+      };
+    });
+
+  } catch (error) {
+    console.error("获取攻略失败:", error);
+    ElMessage.error("获取攻略失败，请稍后重试");
+    guides.value = [];
+  } finally {
+    loading.value = false;
+  }
+};
+
 
 // 页面加载时获取数据
 onMounted(() => {
-  getRecommendations()
-  fetchGuides()
+  fetchGuidesWithRecommendation()
 })
 </script>
 
@@ -276,6 +356,18 @@ onMounted(() => {
     </div>
 
     <div class="container">
+      <!-- 添加排序选项 -->
+      <div class="filter-section">
+        <el-select v-model="filter.sort" @change="handleSortChange" placeholder="排序方式">
+          <el-option
+            v-for="option in sortOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </div>
+
       <!-- 攻略列表 -->
       <div class="guides-list">
         <el-row :gutter="20">
@@ -305,7 +397,7 @@ onMounted(() => {
               
               <!-- 互动区域 -->
               <div class="interaction-area">
-                <div class="interaction-btn" :class="{ active: guide.isLiked }">
+                <div class="interaction-btn">
                   <el-icon><Star /></el-icon>
                   <span>{{ guide.likes }}</span>
                 </div>
@@ -457,6 +549,7 @@ onMounted(() => {
   margin-bottom: 1rem;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -494,6 +587,12 @@ onMounted(() => {
 .pagination {
   margin-top: 2rem;
   text-align: center;
+}
+
+.filter-section {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media screen and (max-width: 768px) {

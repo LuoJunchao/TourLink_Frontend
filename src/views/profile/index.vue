@@ -204,20 +204,33 @@ const fetchUserCollections = async () => {
     }
     
     // 使用attractionApi获取用户收藏的景点
-    const favorites = await fetch(`http://localhost:9082/api/attraction-favorites/user/${userId}`,{
-      method: "GET"
-    })
+    const favorites = await attractionApi.getFavorites(userId)
+    console.log('Favorites:', favorites);
+    
+    // 并行获取所有收藏景点的详细信息
+    const attractions = await Promise.all(
+      favorites.map(f =>
+        attractionApi.getAttractionDetail(f.attractionId)
+          .catch(e => {
+            console.error(`获取景点${f.attractionId}详情失败:`, e)
+            return null
+          })
+      )
+    )
     
     // 处理返回的数据格式，确保与模板中使用的格式一致
-    userCollections.value = favorites.map(favorite => ({
-      id: favorite.attraction.attractionId,
-      name: favorite.attraction.name,
-      image: favorite.attraction.images && favorite.attraction.images.length > 0 
-        ? favorite.attraction.images[0] 
-        : '/src/assets/images/default-spot.jpg',
-      location: favorite.attraction.region || favorite.attraction.address,
-      price: favorite.attraction.price || 0
-    }))
+    userCollections.value = favorites.map((favorite, index) => {
+      const attraction = attractions[index] || {}
+      return {
+        id: favorite.attractionId,
+        name: attraction.name || '未知景点',
+        image: attraction.images && attraction.images.length > 0
+          ? attraction.images[0]
+          : '/src/assets/images/default-spot.jpg',
+        location: attraction.region || attraction.address || '未知地点',
+        price: attraction.price || 0
+      }
+    })
   } catch (error) {
     console.error('获取收藏列表失败:', error)
     ElMessage.error('获取收藏列表失败')
@@ -308,9 +321,7 @@ const removeCollection = async (spotId) => {
     }
     
     // 使用attractionApi取消收藏
-    await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userId}`,{
-      method: 'DELETE'
-    })
+    await attractionApi.removeFavorite(spotId,userId)
     
     // 更新本地数据
     userCollections.value = userCollections.value.filter(spot => spot.id !== spotId)

@@ -201,6 +201,12 @@
   .comment-text {
     margin: 0 0 10px;
     color: #666;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;  /* 限制最多显示3行 */
+    line-clamp: 3;  /* 标准属性 */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .comment-actions {
@@ -243,6 +249,33 @@ const showCommentDialog = ref(false)
 const newComment = ref({
   content: ''
 })
+
+// 处理点赞
+const handleLikeBlog = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    return
+  }
+  
+  try {
+    // 获取当前点赞状态
+    const isLiked = await socialApi.getLikeStatus(guide.value.id, userStore.userId)
+    
+    if (isLiked) {
+      // 如果已经点赞，则取消点赞
+      await socialApi.unlikeBlog(guide.value.id, userStore.userId)
+      guide.value.likes--
+    } else {
+      // 如果未点赞，则添加点赞
+      await socialApi.likeBlog(guide.value.id, userStore.userId)
+      guide.value.likes++
+    }
+    guide.value.isLiked = !isLiked
+  } catch (error) {
+    console.error('点赞操作失败:', error)
+    ElMessage.error('操作失败，请稍后重试')
+  }
+}
 
 // 获取攻略详情
 const fetchGuideDetail = async () => {
@@ -334,7 +367,6 @@ const fetchGuideDetail = async () => {
     }
   } catch (error) {
     console.error('获取攻略详情失败:', error)
-    ElMessage.error('获取攻略详情失败，请稍后重试')
   } finally {
     loading.value = false
   }
