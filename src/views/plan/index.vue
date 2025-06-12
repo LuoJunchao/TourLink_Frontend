@@ -381,10 +381,6 @@ const handleTagSelectionChange = (groupName) => {
     selectedGroupTags.forEach(tag => {
       if (!formData.preference.selectedTags.includes(tag)) {
         formData.preference.selectedTags.push(tag)
-        // 如果标签权重不存在，设置默认权重
-        if (!formData.preference.tagWeights[tag]) {
-          formData.preference.tagWeights[tag] = 0.5
-        }
       }
     })
   })
@@ -443,7 +439,6 @@ const handleSubmit = async () => {
       transportMode: transportMap[formData.transportation[0]] || '',
       preference: {
         selectedTags: formData.preference.selectedTags,
-        // 为每个标签设置相同的权重
         tagWeights: null
       }
     }
