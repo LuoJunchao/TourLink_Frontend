@@ -367,7 +367,6 @@ const fetchGuideDetail = async () => {
     }
   } catch (error) {
     console.error('获取攻略详情失败:', error)
-    ElMessage.error('获取攻略详情失败，请稍后重试')
   } finally {
     loading.value = false
   }
