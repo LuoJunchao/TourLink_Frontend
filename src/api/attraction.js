@@ -164,6 +164,12 @@ class AttractionApi {
       body: JSON.stringify(ids)
     })
   }
+
+  getAttractionById(id) {
+    return request(`/attraction/api/attractions/${id}`, {
+      method: 'GET'
+    })
+  }
 }
 
 export const attractionApi = new AttractionApi()
