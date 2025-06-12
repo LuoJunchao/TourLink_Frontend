@@ -341,7 +341,7 @@ const fetchSpotData = async () => {
 
     if (userStore.isLoggedIn) {
       try {
-        const isFavorite = await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+        const isFavorite = await fetch(`http://localhost:9082/attraction/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
           method : "GET"
         })
         spot.value.isFavorite = isFavorite
@@ -402,12 +402,12 @@ const toggleFavorite = async () => {
     
     if (spot.value.isFavorite) {
       // 如果已收藏，则取消收藏
-      await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+      await fetch(`http://localhost:9082/attraction/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
         method: "DELETE"
       })
     } else {
       // 如果未收藏，则添加收藏
-      await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+      await fetch(`http://localhost:9082/attraction/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
         method: "POST"
       })
     }
