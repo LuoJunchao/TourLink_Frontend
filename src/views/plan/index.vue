@@ -8,12 +8,10 @@
     </div>
 
     <div class="container">
-      <!-- 加载中显示 -->
       <div v-if="loading" class="loading-container">
         <el-skeleton :rows="10" animated />
       </div>
 
-      <!-- 表单区域 -->
       <el-card class="plan-form" v-if="!showResult && !loading">
         <template #header>
           <div class="form-header">制定旅游计划</div>
@@ -31,6 +29,9 @@
                   end-placeholder="结束日期"
                   style="width: 100%"
                 />
+                <div class="calculated-days" v-if="formData.dateRange && formData.dateRange.length === 2">
+                  预计旅行天数: <span class="days-value">{{ calculatedDays }}天</span>
+                </div>
               </el-form-item>
             </el-col>
 
@@ -82,61 +83,61 @@
               </el-form-item>
             </el-col>
 
-            <el-col :span="24">
-              <el-form-item label="旅行天数" prop="maxDays">
-                <el-input-number 
-                  v-model="formData.maxDays" 
-                  :min="1" 
-                  :max="14"
-                  style="width: 200px"
-                />
-              </el-form-item>
-            </el-col>
+
 
             <el-col :span="24">
               <el-form-item label="偏好标签">
-                <div class="tag-hint">最多可选择3个标签</div> <!-- 添加提示文字 -->
-                <div class="tag-container">
-                  <el-tag
-                    v-for="tag in availableTags"
-                    :key="tag"
-                    :class="{ 'active-tag': formData.preference.selectedTags.includes(tag) }"
-                    @click="toggleTag(tag)"
-                    effect="plain"
-                  >
-                    {{ tag }}
-                  </el-tag>
+                <div class="tag-groups">
+                  <div v-for="(tags, groupName) in tagGroups" :key="groupName" class="tag-group">
+                    <div class="group-title">{{ groupName }}</div>
+                    <el-select
+                      v-model="formData.preference.groupSelections[groupName]"
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
+                      :placeholder="`选择${groupName}标签`"
+                      style="width: 100%"
+                      @change="handleTagSelectionChange(groupName)"
+                    >
+                      <el-option
+                        v-for="tag in tags"
+                        :key="tag"
+                        :label="tag"
+                        :value="tag"
+                      />
+                    </el-select>
+                  </div>
+                </div>
+                
+                <div class="selected-tags" v-if="formData.preference.selectedTags.length > 0">
+                  <div class="selected-title">已选标签：</div>
+                  <div class="tag-container">
+                    <el-tag
+                      v-for="tag in formData.preference.selectedTags"
+                      :key="tag"
+                      closable
+                      @close="removeTag(tag)"
+                      effect="plain"
+                    >
+                      {{ tag }}
+                    </el-tag>
+                  </div>
                 </div>
               </el-form-item>
             </el-col>
 
-            <el-col :span="24">
-              <el-form-item label="标签权重">
-                <div v-for="tag in formData.preference.selectedTags" :key="tag" class="tag-weight">
-                  <span class="tag-name">{{ tag }}</span>
-                  <el-slider 
-                    v-model="formData.preference.tagWeights[tag]" 
-                    :min="0" 
-                    :max="1" 
-                    :step="0.1"
-                    :format-tooltip="value => (value * 100).toFixed(0) + '%'"
-                  />
-                </div>
-              </el-form-item>
-            </el-col>
+
 
             <el-col :span="24">
               <el-form-item label="交通方式">
                 <el-checkbox-group v-model="formData.transportation">
                   <el-checkbox label="plane">飞机</el-checkbox>
-                  <el-checkbox label="train">火车</el-checkbox>
-                  <el-checkbox label="bus">大巴</el-checkbox>
-                  <el-checkbox label="car">自驾</el-checkbox>
+                  <el-checkbox label="train">高铁</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
             </el-col>
 
-            <el-col :span="24">
+            <!-- <el-col :span="24">
               <el-form-item label="特殊需求">
                 <el-input
                   v-model="formData.specialRequirements"
@@ -145,7 +146,7 @@
                   placeholder="请输入特殊需求，如：携带宠物、需要无障碍设施等"
                 />
               </el-form-item>
-            </el-col>
+            </el-col> -->
           </el-row>
 
           <div class="form-footer">
@@ -274,7 +275,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { routingApi } from '../../api/routing'
 import { userApi } from '../../api/user'
@@ -293,16 +294,36 @@ const formData = reactive({
   specialRequirements: '',
   preference: {
     selectedTags: [],
-    tagWeights: {}
+    tagWeights: {},
+    groupSelections: {
+      '自然景观': [],
+      '人文历史': [],
+      '现代都市': [],
+      '户外探险': [],
+      '休闲度假': [],
+      '特色体验': []
+    }
   }
+})
+
+// 自动计算旅行天数
+const calculatedDays = computed(() => {
+  if (formData.dateRange && formData.dateRange.length === 2) {
+    const startDate = new Date(formData.dateRange[0])
+    const endDate = new Date(formData.dateRange[1])
+    const diffTime = Math.abs(endDate - startDate)
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1 // 包含首尾两天
+    return diffDays
+  }
+  return 3 // 默认值
 })
 
 // 表单验证规则
 const rules = {
   dateRange: [{ required: true, message: '请选择旅行日期', trigger: 'change' }],
   fromCity: [{ required: true, message: '请选择出发城市', trigger: 'change' }],
-  toCity: [{ required: true, message: '请选择目的地', trigger: 'change' }],
-  maxDays: [{ required: true, message: '请选择旅行天数', trigger: 'change' }]
+  toCity: [{ required: true, message: '请选择目的地', trigger: 'change' }]
+  // 移除maxDays的验证规则
 }
 
 // 城市数据
@@ -321,13 +342,24 @@ const cities = ref([
   { value: '长沙', label: '长沙' },
   { value: '桂林', label: '桂林' },
   { value: '昆明', label: '昆明' },
-  { value: '丽江', label: '丽江' }
+  { value: '丽江', label: '丽江' },
+  { value: '青岛', label: '青岛' },
+  { value: '大连', label: '大连' },
+  { value: '三亚', label: '三亚' },
+  { value: '苏州', label: '苏州' },
+  { value: '天津', label: '天津' }
 ])
 
-// 可用标签
-const availableTags = [
-  '文化  ', '自然  ', '历史  ', '美食  ', '购物  ', '娱乐  ', '艺术  ', '建筑  ', '宗教  ', '户外  ', '海滩  ', '山水  ', '古迹  ', '博物馆 ', '主题公园'
-]
+const tagGroups = reactive({
+  '自然景观': ["自然风光", "山水奇观", "火山地貌", "海滨沙滩", "森林氧吧", "冰雪世界", "日出日落", "瀑布湖泊"],
+  '人文历史': ["历史遗迹", "古建筑群", "宗教圣地", "博物馆", "文化古镇", "传统民俗", "古街小巷", "战争遗址"],
+  '现代都市': ["城市地标", "摩天大楼", "主题乐园", "购物中心", "艺术街区", "游乐场", "夜景胜地", "现代交通"],
+  '户外探险': ["登山徒步", "露营野炊", "骑行路线", "荒野求生", "极限运动", "水上活动", "高原探险", "观星胜地"],
+  '休闲度假': ["温泉疗养", "奢华酒店", "葡萄酒庄", "海岛度假", "垂钓休闲", "高尔夫场", "禅修静心", "音乐节"],
+  '特色体验': ["美食之旅", "艺术展览", "传统手工艺", "节日庆典", "野生动物", "生态保护区", "怀旧火车", "花海胜地"]
+})
+
+
 
 // 状态变量
 const planForm = ref(null)
@@ -351,21 +383,43 @@ const fetchCities = async () => {
   }
 }
 
-// 切换标签选择
-const toggleTag = (tag) => {
+// 处理标签选择变化
+const handleTagSelectionChange = (groupName) => {
+  // 清空当前selectedTags
+  formData.preference.selectedTags = []
+  
+  // 重新从所有分组的选择中构建selectedTags
+  Object.entries(formData.preference.groupSelections).forEach(([group, selectedGroupTags]) => {
+    selectedGroupTags.forEach(tag => {
+      if (!formData.preference.selectedTags.includes(tag)) {
+        formData.preference.selectedTags.push(tag)
+        // 如果标签权重不存在，设置默认权重
+        if (!formData.preference.tagWeights[tag]) {
+          formData.preference.tagWeights[tag] = 0.5
+        }
+      }
+    })
+  })
+}
+
+// 移除标签
+const removeTag = (tag) => {
+  // 从selectedTags中移除
   const index = formData.preference.selectedTags.indexOf(tag)
   if (index > -1) {
     formData.preference.selectedTags.splice(index, 1)
     delete formData.preference.tagWeights[tag]
-  } else {
-    // 检查是否已经选择了三个标签
-    if (formData.preference.selectedTags.length >= 3) {
-      ElMessage.warning('最多只能选择三个标签')
-      return
-    }
-    formData.preference.selectedTags.push(tag)
-    formData.preference.tagWeights[tag] = 0.5 // 默认权重
   }
+  
+  // 从对应的分组选择中也移除
+  Object.entries(tagGroups).forEach(([groupName, tags]) => {
+    if (tags.includes(tag)) {
+      const groupIndex = formData.preference.groupSelections[groupName].indexOf(tag)
+      if (groupIndex > -1) {
+        formData.preference.groupSelections[groupName].splice(groupIndex, 1)
+      }
+    }
+  })
 }
 
 // 提交表单
@@ -384,6 +438,11 @@ const handleSubmit = async () => {
     ElMessage.warning('请至少选择一个偏好标签')
     return
   }
+  
+  if (!formData.dateRange || formData.dateRange.length !== 2) {
+    ElMessage.warning('请选择旅行日期')
+    return
+  }
 
   loading.value = true
   try {
@@ -391,10 +450,11 @@ const handleSubmit = async () => {
     const requestData = {
       fromCity: formData.fromCity,
       toCity: formData.toCity,
-      maxDays: formData.maxDays,
+      maxDays: calculatedDays.value, // 使用计算得到的天数
       preference: {
-        tagWeights: formData.preference.tagWeights,
-        selectedTags: formData.preference.selectedTags
+        selectedTags: formData.preference.selectedTags,
+        // 为每个标签设置相同的权重
+        tagWeights: Object.fromEntries(formData.preference.selectedTags.map(tag => [tag, 1]))
       }
     }
 
@@ -417,20 +477,22 @@ const handleReset = () => {
   formData.budget = 2000
   formData.fromCity = ''
   formData.toCity = ''
-  formData.maxDays = 3
+  // 移除maxDays的重置
   formData.transportation = ['train']
   formData.specialRequirements = ''
   formData.preference.selectedTags = []
   formData.preference.tagWeights = {}
+  // 重置分组选择
+  Object.keys(formData.preference.groupSelections).forEach(key => {
+    formData.preference.groupSelections[key] = []
+  })
 }
 
 // 获取交通方式文本
 const getTransportTypeText = (type) => {
   const types = {
     'TRAIN': '火车',
-    'FLIGHT': '飞机',
-    'BUS': '大巴',
-    'CAR': '自驾'
+    'FLIGHT': '飞机'
   }
   return types[type] || type
 }
@@ -855,47 +917,198 @@ onMounted(() => {
 }
 
 /* 标签样式 */
+.tag-groups {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 40px; /* 增加间距 */
+  margin-bottom: 40px; /* 增加底部间距 */
+  padding: 3px; /* 增加内边距 */
+  background-color: #f9f9f9; /* 优化背景色 */
+  border-radius: 16px; /* 增大圆角 */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); /* 增强阴影效果 */
+  border: 1px solid #eaeaea; /* 添加边框 */
+}
+
+@media (max-width: 768px) {
+  .tag-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tag-group {
+  margin-bottom: 0px; /* 增加底部间距 */
+  transition: all 0.2s ease;
+  padding: 10px; /* 添加内边距 */
+  background-color: white; /* 添加背景色 */
+  border-radius: 12px; /* 添加圆角 */
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04); /* 添加阴影 */
+  width: 400px;
+}
+
+.tag-group:hover {
+  transform: translateY(-5px); /* 增强悬停效果 */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1); /* 增强悬停时阴影 */
+}
+
+.group-title {
+  font-weight: 600;
+  margin-bottom: 16px; /* 增加底部间距 */
+  color: #333; /* 更改为更深的颜色 */
+  font-size: 18px; /* 增大字体 */
+  padding-bottom: 10px; /* 增加底部内边距 */
+  border-bottom: 2px solid #e6f1ff; /* 保留底部边框 */
+  position: relative; /* 添加定位 */
+}
+
+.group-title::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 50px; /* 短于整个边框 */
+  height: 2px;
+  background-color: #409EFF; /* 主题色 */
+}
+
+.selected-tags {
+  margin-top: 40px; /* 增加顶部间距 */
+  padding: 25px; /* 增加内边距 */
+  background-color: #f0f7ff; /* 保留背景色 */
+  border-radius: 16px; /* 增大圆角 */
+  border-left: 5px solid #409EFF; /* 增粗左侧边框 */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06); /* 添加阴影 */
+}
+
+.selected-title {
+  font-weight: 600;
+  margin-bottom: 20px; /* 增加底部间距 */
+  color: #333; /* 更改为更深的颜色 */
+  font-size: 18px; /* 增大字体 */
+  position: relative;
+  display: inline-block;
+  padding-bottom: 8px;
+}
+
+.selected-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #409EFF;
+}
+
 .tag-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 18px; /* 增加间距 */
 }
 
 .el-tag {
   cursor: pointer;
-  padding: 8px 16px;
-  font-size: 14px;
-  border-radius: 20px;
+  padding: 12px 20px; /* 增加内边距 */
+  font-size: 16px; /* 增大字体 */
+  border-radius: 25px; /* 增大圆角 */
   transition: all 0.3s ease;
-  width: 120px; /* 添加固定宽度 */
-  text-align: center; /* 文本居中 */
-  white-space: nowrap; /* 防止文本换行 */
-  overflow: hidden; /* 隐藏溢出内容 */
-  text-overflow: ellipsis; /* 溢出显示省略号 */
+  width: 160px; /* 增加宽度 */
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* 增强阴影 */
+  font-weight: 500; /* 增加字重 */
 }
 
 .el-tag:hover {
-  transform: translateY(-2px);
+  transform: translateY(-5px); /* 增强悬停效果 */
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12); /* 增强悬停时阴影 */
 }
 
 .active-tag {
   background-color: var(--primary-color) !important;
   color: white !important;
   border-color: var(--primary-color) !important;
+  box-shadow: 0 6px 16px rgba(var(--primary-color-rgb), 0.4) !important; /* 增强阴影 */
+  font-weight: 600; /* 增加字重 */
 }
 
 .tag-weight {
-  margin-bottom: 15px;
-  width: 300px; /* 添加固定宽度 */
+  margin-bottom: 25px; /* 增加底部间距 */
+  width: 100%; /* 调整宽度为100% */
+  max-width: 400px; /* 设置最大宽度 */
+  padding: 20px; /* 增加内边距 */
+  background-color: white; /* 更改背景色 */
+  border-radius: 12px; /* 增大圆角 */
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06); /* 添加阴影 */
+  border: 1px solid #eaeaea; /* 添加边框 */
+}
+
+.tag-weight:hover {
+  background-color: #f9f9f9; /* 调整悬停背景色 */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); /* 增强悬停时阴影 */
 }
 
 .tag-name {
   display: block;
-  margin-bottom: 5px;
-  font-weight: 500;
+  margin-bottom: 15px; /* 增加底部间距 */
+  font-weight: 600; /* 保持字重 */
   color: #333;
-  width: 120px; /* 与标签宽度保持一致 */
+  width: 100%; /* 调整宽度 */
   text-align: left;
+  font-size: 16px; /* 增大字体 */
+}
+
+/* 为el-select添加样式 */
+.tag-group .el-select {
+  width: 100%;
+}
+
+.tag-group .el-select .el-input__wrapper {
+  padding: 10px 18px; /* 增加内边距 */
+  border-radius: 12px; /* 增大圆角 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06) !important; /* 增强阴影 */
+  border: 1px solid #eaeaea; /* 添加边框 */
+}
+
+.tag-group .el-select .el-input__wrapper:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1) !important; /* 增强悬停时阴影 */
+}
+
+/* 为el-form-item添加样式 */
+.el-form-item__label {
+  font-size: 18px; /* 增大标签字体 */
+  font-weight: 600; /* 保持字重 */
+  margin-bottom: 15px; /* 增加底部间距 */
+  color: #333;
+}
+
+/* 为el-slider添加样式 */
+.el-slider {
+  margin-top: 15px; /* 增加顶部间距 */
+}
+
+.el-slider__runway {
+  height: 10px; /* 增加滑块轨道高度 */
+  border-radius: 5px; /* 增大圆角 */
+}
+
+.el-slider__bar {
+  height: 10px; /* 与轨道高度一致 */
+  border-radius: 5px; /* 增大圆角 */
+}
+
+.el-slider__button-wrapper {
+  height: 28px; /* 增加按钮包装器高度 */
+  width: 28px; /* 增加按钮包装器宽度 */
+}
+
+.el-slider__button {
+  width: 24px; /* 增加按钮宽度 */
+  height: 24px; /* 增加按钮高度 */
+  border: 2px solid var(--primary-color); /* 保持边框 */
+  box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.3); /* 添加阴影 */
 }
 
 /* 结果展示样式 */
@@ -981,7 +1194,7 @@ onMounted(() => {
   left: 50%;
   transform: translateX(-50%);
   background-color: white;
-  padding: 0 10px;
+  padding: 0 30px;
   color: var(--primary-color);
   font-weight: 500;
   z-index: 1;

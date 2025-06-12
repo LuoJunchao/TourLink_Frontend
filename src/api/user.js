@@ -12,25 +12,28 @@ class UserApi {
 
   // 用户基本操作
   register(data) {
-    return request('/api/auth/register', {
+    return request('/user/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data)
     })
   }
 
   login(data) {
-    return request('/api/auth/login', {
+    return request('/user/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(data)
     })
   }
 
   getUserInfo(id) {
-    return request(`/api/users/${id}`)
+    const data=request(`/user/api/users/${id}`)
+    console.log(data)
+    return data
   }
 
+
   updateUser(id, data) {
-    return request(`/api/users/${id}`, {
+    return request(`/user/api/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data)
     })
@@ -38,11 +41,11 @@ class UserApi {
   
   // 用户档案操作
   getProfile(userId) {
-    return request(`/api/user-profiles/user/${userId}`)
+    return request(`/user/api/user-profiles/user/${userId}`)
   }
 
   updateProfile(id, data) {
-    return request(`/api/user-profiles/${id}`, {
+    return request(`/user/api/user-profiles/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data)
     })
@@ -50,7 +53,7 @@ class UserApi {
   
   // 用户角色操作
   getUserRoles(userId) {
-    return request(`/api/user-roles/user/${userId}`)
+    return request(`/user/api/user-roles/user/${userId}`)
   }
   
   // 获取当前用户信息（使用存储的用户ID）
@@ -65,24 +68,24 @@ class UserApi {
   
   // 用户收藏操作
   addFavorite(userId, attractionId) {
-    return request(`/api/users/${userId}/favorites/${attractionId}`, {
+    return request(`/user/api/users/${userId}/favorites/${attractionId}`, {
       method: 'POST'
     })
   }
   
   removeFavorite(userId, attractionId) {
-    return request(`/api/users/${userId}/favorites/${attractionId}`, {
+    return request(`/user/api/users/${userId}/favorites/${attractionId}`, {
       method: 'DELETE'
     })
   }
   
   getUserFavorites(userId) {
-    return request(`/api/users/${userId}/favorites`)
+    return request(`/user/api/users/${userId}/favorites`)
   }
   
   // 用户评论操作
   getUserReviews(userId) {
-    return request(`/api/users/${userId}/reviews`)
+    return request(`/user/api/users/${userId}/reviews`)
   }
 }
 

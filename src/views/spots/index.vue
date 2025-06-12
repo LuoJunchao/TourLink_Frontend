@@ -30,48 +30,7 @@
             </el-radio-group>
           </div>
           
-          <!-- 添加标签筛选区域 -->
-          <div class="tag-filters">
-            <span>热门标签：</span>
-            <div class="tag-list">
-              <el-tag 
-                v-for="tag in popularTags" 
-                :key="tag.id"
-                :type="selectedTags.includes(tag.name) ? 'primary' : 'info'"
-                effect="light"
-                class="filter-tag"
-                @click="toggleTagFilter(tag.name)"
-              >
-                {{ tag.name }}
-              </el-tag>
-            </div>
-          </div>
           
-          <el-row :gutter="20">
-            <el-col :span="6">
-              <el-select v-model="filters.region" placeholder="选择地区" clearable @change="handleFilter">
-                <el-option v-for="region in regionOptions" :key="region.value" :label="region.label"
-                  :value="region.value" />
-              </el-select>
-            </el-col>
-            <el-col :span="6">
-              <el-select v-model="filters.type" placeholder="景点类型" clearable @change="handleFilter">
-                <el-option v-for="type in typeOptions" :key="type.value" :label="type.label" :value="type.value" />
-              </el-select>
-            </el-col>
-            <el-col :span="6">
-              <el-select v-model="filters.priceRange" placeholder="价格区间" clearable @change="handleFilter">
-                <el-option label="免费" value="0-0" />
-                <el-option label="0-100元" value="0-100" />
-                <el-option label="100-300元" value="100-300" />
-                <el-option label="300元以上" value="300-9999" />
-              </el-select>
-            </el-col>
-            <el-col :span="6">
-              <el-button type="primary" @click="handleFilter">筛选</el-button>
-              <el-button @click="resetFilters">重置</el-button>
-            </el-col>
-          </el-row>
         </div>
 
         <!-- 其余部分保持不变 -->
@@ -156,9 +115,10 @@ const currentSort = ref('viewCount,desc')
 // 处理排序变化
 const handleSortChange = (val) => {
   currentSort.value = val
+  currentPage.value = 1  // 重置页码到第一页
   fetchSpots()
 }
-// 地区选项
+/* // 地区选项
 const regionOptions = [
   { label: '广西', value: '广西' },
   { label: '云南', value: '云南' },
@@ -173,7 +133,7 @@ const typeOptions = [
   { label: '人文古迹', value: 'cultural' },
   { label: '主题公园', value: 'theme' },
   { label: '博物馆', value: 'museum' }
-]
+] */
 
 // 分页和加载状态
 const currentPage = ref(1)
@@ -217,27 +177,27 @@ const handleCurrentChange = (val) => {
 const fetchSpots = async () => {
   loading.value = true
   try {
-    // 处理价格范围
-    let minPrice, maxPrice
-    if (filters.priceRange) {
-      const [min, max] = filters.priceRange.split('-').map(Number)
-      minPrice = min
-      maxPrice = max
+    let response;
+    
+    // 如果有搜索关键词，使用搜索API
+    if (searchQuery.value.trim()) {
+      // 使用searchAttractions方法进行搜索
+      response = await attractionApi.searchAttractions({
+        keyword: searchQuery.value,
+        type: filters.type,
+        region: filters.region
+      })
+      console.log('搜索响应数据:', response)
+    } else {
+      // 没有搜索关键词时使用分页API
+      response = await attractionApi.getAttractions({
+        page: currentPage.value - 1,  // Spring Pageable页码从0开始
+        size: pageSize.value,
+        sort: currentSort.value  // 格式已符合Spring要求：'属性名,排序方向'
+      })
+      console.log('分页响应数据:', response)
     }
-
-    // 在fetchSpots函数中修改API调用参数
-    const response = await attractionApi.getAttractions({
-      page: currentPage.value - 1,
-      size: pageSize.value,
-      sort: currentSort.value,
-      keyword: searchQuery.value,
-      region: filters.region,
-      type: filters.type,
-      minPrice,
-      maxPrice,
-      tags: selectedTags.value.length > 0 ? selectedTags.value.join(',') : undefined
-    })
-
+    
     spots.value = response.content || []
     total.value = response.totalElements || 0
   } catch (error) {
@@ -259,7 +219,7 @@ const viewSpotDetail = (spotId) => {
 onMounted(() => {
   fetchSpots()
 })
-// 获取热门景点
+/* // 获取热门景点
 const fetchMostViewedSpots = async () => {
   loading.value = true
   try {
@@ -274,9 +234,9 @@ const fetchMostViewedSpots = async () => {
   } finally {
     loading.value = false
   }
-}
+} */
 
-// 获取高评分景点
+/* // 获取高评分景点
 const fetchTopRatedSpots = async () => {
   loading.value = true
   try {
@@ -300,11 +260,11 @@ const fetchTopRatedSpots = async () => {
 const fetchAllSpots = () => {
   // 重置筛选条件
   resetFilters()
-}
+} */
 // 添加标签筛选
 const selectedTags = ref([])
 
-// 热门标签列表
+/* // 热门标签列表
 const popularTags = [
   { id: 1, name: '自然风光' },
   { id: 2, name: '人文古迹' },
@@ -314,9 +274,9 @@ const popularTags = [
   { id: 6, name: '亲子游' },
   { id: 7, name: '摄影胜地' },
   { id: 8, name: '历史遗迹' }
-]
+] */
 
-// 切换标签筛选
+/* // 切换标签筛选
 const toggleTagFilter = (tagName) => {
   const index = selectedTags.value.indexOf(tagName)
   if (index > -1) {
@@ -326,7 +286,7 @@ const toggleTagFilter = (tagName) => {
   }
   currentPage.value = 1
   fetchSpots()
-}
+} */
 </script>
 
 <style scoped>

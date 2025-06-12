@@ -63,15 +63,31 @@ const rules = {
 
 const handleLogin = async () => {
   if (!loginFormRef.value) return
-  
+
   try {
     await loginFormRef.value.validate()
     loading.value = true
-    await userStore.login(loginForm.value)
-    ElMessage.success('登录成功')
-    router.push('/')
+
+    console.log('开始登录流程')
+
+    // 执行登录
+    const response = await userStore.login(loginForm.value)
+    console.log('登录完成，响应:', response)
+
+    // 检查登录后的状态
+    console.log('登录后状态检查:')
+    userStore.debugAuthState()
+
+    ElMessage.success('登录成功！')
+
+    // 获取重定向路径，如果没有则跳转到首页
+    const redirect = router.currentRoute.value.query.redirect || '/'
+    console.log('准备跳转到:', redirect)
+    router.push(redirect)
+
   } catch (error) {
-    ElMessage.error(error.message || '登录失败')
+    console.error('登录失败:', error)
+    ElMessage.error(error.message || '登录失败，请检查用户名和密码')
   } finally {
     loading.value = false
   }

@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Histogram, UserFilled, Menu as MenuIcon, User, SwitchButton } from '@element-plus/icons-vue'
 import { useUserStore } from './stores/user'
 import { useSpotStore } from './stores/spots' // 添加这一行导入useSpotStore
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -18,8 +19,27 @@ router.afterEach(() => {
 const isHeaderVisible = ref(true)
 let lastScrollPosition = 0
 
-onMounted(() => {
+// 监听登录状态变化
+watch(() => userStore.isLoggedIn, (newValue, oldValue) => {
+  if (newValue && !oldValue) {
+    console.log('用户已登录')
+    ElMessage.success('欢迎回来！')
+  } else if (!newValue && oldValue) {
+    console.log('用户已退出')
+  }
+})
+
+onMounted(async () => {
   window.addEventListener('scroll', handleScroll)
+
+  // 检查并刷新登录状态
+  if (userStore.token && !userStore.userInfo) {
+    try {
+      await userStore.refreshAuthState()
+    } catch (error) {
+      console.log('刷新登录状态失败:', error.message)
+    }
+  }
 })
 
 const handleScroll = () => {
@@ -33,9 +53,32 @@ const handleScroll = () => {
   lastScrollPosition = currentScrollPosition
 }
 
-const handleLogout = () => {
-  userStore.logout()
-  router.push('/login')
+const handleProfileClick = () => {
+  console.log('点击个人中心')
+  console.log('当前登录状态:', {
+    isLoggedIn: userStore.isLoggedIn,
+    token: userStore.token ? '存在' : '不存在',
+    userInfo: userStore.userInfo ? '存在' : '不存在',
+    userId: userStore.userId
+  })
+
+  if (userStore.isLoggedIn) {
+    console.log('已登录，跳转到个人中心')
+    router.push('/profile')
+  } else {
+    console.log('未登录，跳转到登录页')
+    router.push('/login')
+  }
+}
+
+const handleLogout = async () => {
+  try {
+    userStore.logout()
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  } catch (error) {
+    ElMessage.error('退出登录失败')
+  }
 }
 
 // 监听路由变化，清理可能的错误状态
@@ -77,7 +120,7 @@ onBeforeUnmount(() => {
           <a class="nav-item" :class="{ 'active': $route.path.startsWith('/spots') }" @click="router.push('/spots')">热门景点</a>
           <a class="nav-item" :class="{ 'active': $route.path.startsWith('/plan') }" @click="router.push('/plan')">旅游规划</a>
           <a class="nav-item" :class="{ 'active': $route.path.startsWith('/guides') }" @click="router.push('/guides')">攻略大全</a>
-          <a class="nav-item" :class="{ 'active': $route.path.startsWith('/profile') }" @click="userStore.isLoggedIn ? router.push('/profile') : router.push('/login')">个人中心</a>
+          <a class="nav-item" :class="{ 'active': $route.path.startsWith('/profile') }" @click="handleProfileClick">个人中心</a>
         </nav>
         
         
@@ -92,7 +135,7 @@ onBeforeUnmount(() => {
               </div>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item @click="router.push('/profile')">
+                  <el-dropdown-item @click="handleProfileClick">
                     <el-icon><User /></el-icon>个人中心
                   </el-dropdown-item>
                   <el-dropdown-item @click="handleLogout">

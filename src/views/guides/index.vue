@@ -1,16 +1,19 @@
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch ,computed} from 'vue'
 import { Star, ChatRound, Edit, Search } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { socialApi } from '@/api/social' // 导入社交API
 import { useUserStore } from '@/stores/user' // 导入用户存储
+import { userApi } from '../../api/user'
 
 const router = useRouter()
 const userStore = useUserStore() // 使用用户存储
 
 // 添加背景图变量
 const backgroundImage = '/src/assets/images/banners/home-banner.jpg'
+
+const searchType = ref('content')
 
 // 筛选条件
 const filter = reactive({
@@ -21,14 +24,14 @@ const filter = reactive({
 
 // 分页
 const currentPage = ref(1)
-const pageSize = ref(9)
+const pageSize = ref(10)
 const total = ref(0) // 初始化为0
 const loading = ref(false) // 添加加载状态
 
 // 攻略数据
 const guides = ref([])
 
-// 处理点赞
+/* // 处理点赞
 const handleLike = async (guideId) => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
@@ -37,12 +40,13 @@ const handleLike = async (guideId) => {
   
   try {
     const guide = guides.value.find(g => g.id === guideId)
+    console.log(Number(guideId), userStore.userId,typeof String(userStore.userId));
     if (guide) {
       if (guide.isLiked) {
-        await socialApi.unlikeBlog(guideId, userStore.userId)
+        await socialApi.unlikeBlog(Number(guideId), String(userStore.userId))
         guide.likes--
       } else {
-        await socialApi.likeBlog(guideId, userStore.userId)
+        await socialApi.likeBlog(Number(guideId), String(userStore.userId))
         guide.likes++
       }
       guide.isLiked = !guide.isLiked
@@ -51,12 +55,8 @@ const handleLike = async (guideId) => {
     console.error('点赞操作失败:', error)
     ElMessage.error('操作失败，请稍后重试')
   }
-}
+} */
 
-// 处理评论
-const handleComment = (guideId) => {
-  router.push(`/guides/${guideId}`)
-}
 
 // 查看攻略详情
 const viewGuideDetail = async (guideId) => {
@@ -72,6 +72,14 @@ const viewGuideDetail = async (guideId) => {
   }
 }
 
+const getSearchPlaceholder = () => {
+  switch(searchType.value) {
+    case 'content': return '搜索攻略内容';
+    case 'title': return '搜索攻略标题'
+    default: return '搜索攻略内容';
+  }
+}
+
 // 写攻略
 const handleWrite = () => {
   if (!userStore.isLoggedIn) {
@@ -81,83 +89,83 @@ const handleWrite = () => {
   router.push('/guides/edit')
 }
 
-const searchType = ref('keyword') // 默认搜索类型为关键字
-const searchQuery = ref('')
-
-// 搜索类型选项
-const searchTypes = [
-  { value: 'keyword', label: '关键字' },
-  { value: 'author', label: '作者' }
-]
-
-// 处理搜索
 const handleSearch = () => {
   if (!searchQuery.value.trim()) return
+  currentPage.value = 1 // 重置到第一页
   fetchGuides({
     searchType: searchType.value,
     keyword: searchQuery.value
   })
 }
 
+
+const searchQuery = ref('')
+
+// 搜索类型选项
+const searchTypes = [
+  { value: 'content', label: '内容' },
+  { value: 'title', label: '标题' }
+]
+
+const isLoggedIn = computed(() => userStore.isLoggedIn)
+
 // 获取攻略数据的函数
 const fetchGuides = async (params = {}) => {
   loading.value = true
   try {
-    let data
+    let response;
+    
     if (params.keyword) {
-      // 搜索博客
-      data = await socialApi.searchBlogs(params.keyword, params.searchType)
+      // 搜索博客，传递分页参数
+      response = await socialApi.searchBlogs(
+        params.keyword, 
+        params.searchType || searchType.value,
+        currentPage.value - 1,  // 后端分页从0开始
+      )
     } else {
-      // 获取所有博客
-      data = await socialApi.getBlogs()
-    }
-    
-    // 处理筛选和排序
-    let filteredData = [...data]
-    
-    // 根据地区筛选
-    if (filter.region) {
-      filteredData = filteredData.filter(blog => 
-        blog.destination && blog.destination.includes(filter.region)
+      // 获取所有博客，同样传递分页参数
+      response = await socialApi.getBlogRanking(
+        'ViewCount',
+        '',
+        currentPage.value - 1,
       )
     }
     
-    // 根据类型筛选
-    if (filter.type) {
-      filteredData = filteredData.filter(blog => 
-        blog.tags && blog.tags.includes(filter.type)
-      )
-    }
+    // 获取所有博客作者的用户信息
+    const blogs = response.content || []
+    const userPromises = blogs.map(blog => {
+      /* if (blog.userId) {
+        return userApi.getUserInfo(blog.userId)
+          .catch(error => {
+            console.error(`获取用户 ${blog.userId} 信息失败:`, error)
+            return null
+          })
+      }
+      return Promise.resolve(null) */
+    })
     
-    // 排序
-    switch (filter.sort) {
-      case 'latest':
-        filteredData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        break
-      case 'most_liked':
-        filteredData.sort((a, b) => b.likes - a.likes)
-        break
-      case 'most_commented':
-        filteredData.sort((a, b) => b.comments - a.comments)
-        break
-    }
+    const userInfos = await Promise.all(userPromises)
     
-    // 分页处理
-    total.value = filteredData.length
-    const start = (currentPage.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    guides.value = filteredData.slice(start, end).map(blog => ({
-      id: blog.id,
-      username: blog.author?.name || '匿名用户',
-      userAvatar: blog.author?.avatar || '/src/assets/images/avatars/default.jpg',
-      publishTime: new Date(blog.createdAt).toLocaleDateString(),
-      title: blog.title,
-      content: blog.content.substring(0, 100) + '...',
-      coverImage: blog.coverImage || '/src/assets/images/guides/default.jpg',
-      likes: blog.likeCount || 0,
-      comments: blog.commentCount || 0,
-      isLiked: blog.isLiked || false
-    }))
+    // 将用户信息与博客数据结合
+    guides.value = blogs.map((blog, index) => {
+      const userInfo = userInfos[index]
+      return {
+        id: blog.blogId,
+        username: userInfo ? (userInfo.username || userInfo.name || '匿名用户') : '匿名用户',
+        userAvatar: userInfo ? (userInfo.avatar || '/src/assets/images/avatars/default.jpg') : '/src/assets/images/avatars/default.jpg',
+        publishTime: blog.publishTime ? new Date(blog.publishTime).toLocaleDateString() : '未知时间',
+        title: blog.title || '无标题',
+        content: blog.content ? (blog.content.substring(0, 100) + '...') : '',
+        coverImage: blog.coverImage || '/src/assets/images/guides/default.jpg',
+        likes: blog.likeCount || 0,
+        comments: blog.commentCount || 0,
+        isLiked: blog.isLiked || false
+      };
+    });
+    
+    // 更新总数
+    total.value = response.totalElements || 0
+    
   } catch (error) {
     console.error('获取攻略数据失败:', error)
     ElMessage.error('获取攻略数据失败，请稍后重试')
@@ -179,14 +187,54 @@ const handleCurrentChange = (page) => {
   fetchGuides()
 }
 
-// 监听筛选条件变化
-watch(filter, () => {
-  currentPage.value = 1 // 重置页码
-  fetchGuides()
-}, { deep: true })
+//获取推荐
+const getRecommendations = async () => {
+  // 如果用户未登录，不获取推荐
+  if (!isLoggedIn.value) return
+  
+  try {
+    loading.value = true
+    const userId = userStore.userId
+    console.log("获取推荐")
+    const response = await fetch('http://localhost:8000/recommend_blogs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        top_k_tags: 5,
+        top_k_attractions: 8,  // 限制为8个推荐景点
+        alpha: 0.8
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    console.log('推荐结果:', result.data)
+    
+    // 获取推荐景点的详细信息并替换popularSpots
+    if (result.data && result.data.length > 0) {
+      const attractionIds = result.data
+      const attractions = await socialApi.getBlogsByIds(attractionIds)
+      popularSpots.value = attractions || []
+    }
+  } catch (error) {
+    console.error('获取推荐失败:', error)
+    ElMessage.error('获取推荐失败，将显示默认景点')
+    // 获取失败时回退到默认景点获取方式
+    fetchAllSpots()
+  } finally {
+    loading.value = false
+  }
+}
 
 // 页面加载时获取数据
 onMounted(() => {
+  getRecommendations()
   fetchGuides()
 })
 </script>
@@ -203,6 +251,7 @@ onMounted(() => {
             v-model="searchType"
             class="search-type-select"
             size="large"
+            @keyup.enter="handleSearch"
           >
             <el-option
               v-for="type in searchTypes"
@@ -213,7 +262,7 @@ onMounted(() => {
           </el-select>
           <el-input
             v-model="searchQuery"
-            :placeholder="searchType === 'keyword' ? '搜索攻略关键字' : '搜索作者名称'"
+            :placeholder="getSearchPlaceholder()"
             size="large"
             class="search-input"
             @keyup.enter="handleSearch"
@@ -227,32 +276,6 @@ onMounted(() => {
     </div>
 
     <div class="container">
-      <!-- 筛选器 -->
-      <div class="filters">
-        <el-row :gutter="20">
-          <el-col :xs="24" :sm="8">
-            <el-select v-model="filter.region" placeholder="选择地区" clearable style="width: 100%">
-              <el-option label="广西" value="guangxi" />
-              <el-option label="云南" value="yunnan" />
-            </el-select>
-          </el-col>
-          <el-col :xs="24" :sm="8">
-            <el-select v-model="filter.type" placeholder="攻略类型" clearable style="width: 100%">
-              <el-option label="美食" value="food" />
-              <el-option label="住宿" value="hotel" />
-              <el-option label="景点" value="spot" />
-            </el-select>
-          </el-col>
-          <el-col :xs="24" :sm="8">
-            <el-select v-model="filter.sort" placeholder="排序方式" clearable style="width: 100%">
-              <el-option label="最新发布" value="latest" />
-              <el-option label="最多点赞" value="most_liked" />
-              <el-option label="最多评论" value="most_commented" />
-            </el-select>
-          </el-col>
-        </el-row>
-      </div>
-
       <!-- 攻略列表 -->
       <div class="guides-list">
         <el-row :gutter="20">
@@ -263,9 +286,7 @@ onMounted(() => {
             >
               <!-- 用户信息 -->
               <div class="user-info">
-                <el-avatar :size="40" :src="guide.userAvatar" />
                 <div class="user-details">
-                  <div class="username">{{ guide.username }}</div>
                   <div class="publish-time">{{ guide.publishTime }}</div>
                 </div>
               </div>
@@ -284,11 +305,11 @@ onMounted(() => {
               
               <!-- 互动区域 -->
               <div class="interaction-area">
-                <div class="interaction-btn" :class="{ active: guide.isLiked }" @click="handleLike(guide.id)">
+                <div class="interaction-btn" :class="{ active: guide.isLiked }">
                   <el-icon><Star /></el-icon>
                   <span>{{ guide.likes }}</span>
                 </div>
-                <div class="interaction-btn" @click="handleComment(guide.id)">
+                <div class="interaction-btn">
                   <el-icon><ChatRound /></el-icon>
                   <span>{{ guide.comments }}</span>
                 </div>
@@ -305,7 +326,7 @@ onMounted(() => {
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :total="total"
-          :page-sizes="[9, 18, 36]"
+          :page-sizes="[10]"
           layout="total, sizes, prev, pager, next"
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"

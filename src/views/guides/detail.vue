@@ -8,8 +8,7 @@
           <h1 class="guide-title">{{ guide.title }}</h1>
           <div class="author-info">
             <el-avatar :src="guide.author.avatar" />
-            <span class="author-name">{{ guide.author.name }}</span>
-            <span class="publish-time">{{ guide.publishTime }}</span>
+            <span class="author-name">{{ guide.author.name }}         {{ guide.publishTime.split('T')[0]  }}</span>
           </div>
           <!-- 添加统计信息到顶部 -->
           <div class="meta-stats">
@@ -17,7 +16,7 @@
               <el-icon><View /></el-icon>
               <span>{{ guide.views }} 阅读</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-item" @click="handleLikeBlog" :class="{ 'liked': guide.isLiked }">
               <el-icon><Star /></el-icon>
               <span>{{ guide.likes }} 点赞</span>
             </div>
@@ -51,7 +50,7 @@
                 <el-button type="primary" @click="showCommentDialog = true">写评论</el-button>
               </div>
             </template>
-            <div v-if="guide.commentList && guide.commentList.length" class="comment-list">
+            <div v-if="guide.commentList && guide.commentList.length > 0" class="comment-list">
               <div v-for="comment in guide.commentList" :key="comment.id" class="comment-item">
                 <el-avatar :src="comment.userAvatar" />
                 <div class="comment-content">
@@ -60,15 +59,7 @@
                     <span class="comment-time">{{ comment.time }}</span>
                   </div>
                   <p class="comment-text">{{ comment.content }}</p>
-                  <div class="comment-actions">
-                    <el-button text type="primary" size="small" @click="replyToComment(comment)">
-                        <el-icon><ChatRound /></el-icon>回复
-                    </el-button>
-                    <el-button text type="primary" size="small" @click="likeComment(comment)">
-                      <el-icon><Star /></el-icon> 
-                      {{ comment.likes }}
-                    </el-button>
-                  </div>
+                  <!-- 其他评论操作 -->
                 </div>
               </div>
             </div>
@@ -142,6 +133,16 @@
       display: flex;
       align-items: center;
       gap: 5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      
+      &.liked {
+        color: #ff6b6b;
+      }
+      
+      &:hover {
+        transform: scale(1.05);
+      }
     }
   }
 }
@@ -230,6 +231,7 @@ import { ElMessage } from 'element-plus'
 import { View, Star, ChatDotRound, ChatRound } from '@element-plus/icons-vue'
 import { socialApi } from '@/api/social' // 导入社交API
 import { useUserStore } from '@/stores/user' // 导入用户存储
+import { userApi } from '@/api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -252,39 +254,83 @@ const fetchGuideDetail = async () => {
     // 获取评论
     const comments = await socialApi.getCommentsByBlogId(route.params.id)
     
-    // 获取点赞数
-    const likeCount = await socialApi.getLikeCount(route.params.id)
-    
-    // 获取浏览量
-    const viewCount = await socialApi.getViewCount(route.params.id)
-    
-    // 如果用户已登录，增加浏览量
+    // 检查用户是否已点赞
+    let isLiked = false
     if (userStore.isLoggedIn) {
-      await socialApi.viewBlog(route.params.id, userStore.userId)
+      try {
+        isLiked = await socialApi.checkUserLiked(route.params.id, userStore.userId)
+      } catch (error) {
+        console.error('检查点赞状态失败:', error)
+      }
+    }
+    
+    // 获取作者信息
+    // 获取作者信息
+    let authorName = '匿名用户'
+    let authorAvatar = '/src/assets/images/user.jpg'
+    
+    if (blogData.userId) {
+      try {
+        const authorInfo = await userApi.getUserInfo(blogData.userId)
+        if (authorInfo) {
+          authorName = authorInfo.username || authorInfo.name || '匿名用户'
+          authorAvatar = authorInfo.avatar || '/src/assets/images/user.jpg'
+          console.log('作者名称:', authorName)
+        }
+      } catch (error) {
+        console.error('获取作者信息失败:', error)
+      }
+    }
+    
+    // 处理评论用户信息
+    const processedComments = []
+    for (const comment of comments) {
+      let username = '匿名用户'
+      let userAvatar = '/src/assets/images/user.jpg'
+      
+      if (comment.userId) {
+        try {
+          const userInfo = await userApi.getUserInfo(comment.userId)
+          if (userInfo) {
+            username = userInfo.username || userInfo.name || '匿名用户'
+            userAvatar = userInfo.avatar || '/src/assets/images/user.jpg'
+          }
+        } catch (error) {
+          console.error('获取评论用户信息失败:', error)
+        }
+      }
+      
+      processedComments.push({
+        id: comment.commentId || comment.id, // 使用commentId或fallback到id
+        username: username,
+        userAvatar: userAvatar,
+        content: comment.content,
+        time: comment.commentTime ? comment.commentTime.split('T')[0] : new Date().toISOString().split('T')[0],
+        likes: comment.likeCount || 0
+      })
     }
     
     // 整合数据
     guide.value = {
-      id: blogData.id,
+      id: blogData.blogId, // 使用blogId
       title: blogData.title,
       author: {
-        name: blogData.author?.name || '匿名用户',
-        avatar: blogData.author?.avatar || '/src/assets/images/avatars/default.jpg'
+        name: authorName,
+        avatar: authorAvatar
       },
-      publishTime: new Date(blogData.createdAt).toLocaleDateString(),
-      coverImage: blogData.coverImage || '/src/assets/images/guides/default.jpg',
-      views: viewCount || 0,
-      likes: likeCount || 0,
-      comments: comments.length || 0,
+      publishTime: blogData.publishTime || new Date().toLocaleDateString(),
+      coverImage: blogData.images[0],
+      views: blogData.viewCount || 0,
+      likes: blogData.likeCount || 0,
+      comments: blogData.commentCount || 0,
       content: blogData.content,
-      commentList: comments.map(comment => ({
-        id: comment.id,
-        username: comment.user?.name || '匿名用户',
-        userAvatar: comment.user?.avatar || '/src/assets/images/avatars/default.jpg',
-        content: comment.content,
-        time: new Date(comment.createdAt).toLocaleString(),
-        likes: comment.likeCount || 0
-      }))
+      commentList: processedComments,
+      isLiked: isLiked // 添加点赞状态
+    }
+    
+    // 如果用户已登录，增加浏览量
+    if (userStore.isLoggedIn) {
+      await socialApi.viewBlog(route.params.id, userStore.userId)
     }
   } catch (error) {
     console.error('获取攻略详情失败:', error)
@@ -357,6 +403,7 @@ const likeComment = async (comment) => {
 }
 
 onMounted(() => {
+  socialApi.viewBlog(route.params.id, userStore.userId)
   fetchGuideDetail()
 })
 </script>

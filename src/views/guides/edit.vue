@@ -15,34 +15,20 @@
 
         <!-- 封面图片 -->
         <el-form-item label="封面图片" prop="coverImage">
-          <el-upload
-            class="cover-uploader"
-            action="/api/upload"
-            :show-file-list="false"
-            :on-success="handleCoverSuccess"
-          >
-            <el-image
-              v-if="blogForm.coverImage"
-              :src="blogForm.coverImage"
-              fit="cover"
-              class="cover-image"
-            />
-            <el-icon v-else class="cover-uploader-icon"><Plus /></el-icon>
+          <el-upload class="cover-uploader" action="/api/upload" :show-file-list="false"
+            :on-success="handleCoverSuccess">
+            <el-image v-if="blogForm.coverImage" :src="blogForm.coverImage" fit="cover" class="cover-image" />
+            <el-icon v-else class="cover-uploader-icon">
+              <Plus />
+            </el-icon>
           </el-upload>
           <div class="upload-tip">建议尺寸：1200x675px</div>
         </el-form-item>
 
-        <!-- 目的地 -->
-        <el-form-item label="目的地" prop="destination">
-          <el-cascader
-            v-model="blogForm.destination"
-            :options="destinations"
-            placeholder="请选择目的地"
-          />
-        </el-form-item>
+
 
         <!-- 标签 -->
-        <el-form-item label="标签" prop="tags">
+        <!--  <el-form-item label="标签" prop="tags">
           <el-select
             v-model="blogForm.tags"
             multiple
@@ -57,25 +43,22 @@
               :value="tag.value"
             />
           </el-select>
-        </el-form-item>
+        </el-form-item> -->
 
         <!-- 正文编辑器 -->
         <el-form-item label="正文" prop="content">
           <div class="editor-container">
-            <el-input
-              v-model="blogForm.content"
-              type="textarea"
-              :rows="15"
-              placeholder="请输入博客正文"
-              resize="none"
-            />
+            <el-input v-model="blogForm.content" type="textarea" :rows="15" placeholder="请输入博客正文" resize="none" />
           </div>
         </el-form-item>
 
+        <!-- 在正文编辑器下方添加内容处理选项 -->
+
+
         <!-- 操作按钮 -->
         <el-form-item>
-          <el-button type="primary" @click="submitBlog">发布</el-button>
-          <el-button @click="saveDraft">保存草稿</el-button>
+          <el-button type="primary" @click="submitBlog">发布</el-button><!-- 
+          <el-button @click="saveDraft">保存草稿</el-button> -->
           <el-button @click="cancel">取消</el-button>
         </el-form-item>
       </el-form>
@@ -90,6 +73,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { socialApi } from '@/api/social' // 导入社交API
 import { useUserStore } from '@/stores/user' // 导入用户存储
+import { processContent } from '@/utils/contentUtils' // 导入内容处理工具
 
 const route = useRoute()
 const router = useRouter()
@@ -101,10 +85,14 @@ const isEdit = ref(!!route.params.id)
 // 表单数据
 const blogForm = ref({
   title: '',
-  coverImage: '',
-  destination: [],
-  tags: [],
-  content: ''
+  content: '',
+})
+
+// 内容处理选项
+const contentProcessOptions = ref({
+  filterSensitive: true, // 是否过滤敏感词
+  format: true, // 是否格式化文本
+  formatParagraph: true // 是否格式化段落
 })
 
 // 表单验证规则
@@ -152,7 +140,7 @@ const handleCoverSuccess = (response) => {
 const getBlogDetail = async (id) => {
   try {
     const blogData = await socialApi.getBlogDetail(id)
-    
+
     // 将后端数据映射到表单
     blogForm.value = {
       title: blogData.title,
@@ -167,29 +155,55 @@ const getBlogDetail = async (id) => {
   }
 }
 
+// 处理内容
+const handleContentProcess = () => {
+  // 处理内容
+  const processedContent = processContent(blogForm.value.content, contentProcessOptions.value)
+
+  // 更新表单内容
+  blogForm.value.content = processedContent
+
+  ElMessage.success('内容处理完成')
+}
+
 // 提交博客
 const submitBlog = async () => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
     return
   }
-  
+
   try {
-    const blogData = {
-      ...blogForm.value,
-      authorId: userStore.userId
-    }
-    
+    // 处理内容
+    blogForm.value.content = processContent(blogForm.value.content, contentProcessOptions.value)
+
+
+    console.log(blogForm)
     let result
     if (isEdit.value) {
       // 更新博客
       result = await socialApi.updateBlog(route.params.id, blogData)
     } else {
       // 创建博客
-      result = await socialApi.createBlog(blogData)
+      result = await fetch('http://localhost:9082/social/api/blogs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: userStore.userId,
+          title: blogForm.value.title,
+          content: blogForm.value.content,
+        })
+      })
     }
-    
-    ElMessage.success(isEdit.value ? '更新成功' : '发布成功')
+
+    if (result.blogId == -1) {
+      ElMessage.success('发布成功')
+    }
+    else {
+      ElMessage.error('发布失败,请重新检查输入')
+    }
     router.push('/guides')
   } catch (error) {
     console.error(isEdit.value ? '更新失败:' : '发布失败:', error)
@@ -203,14 +217,16 @@ const saveDraft = async () => {
     ElMessage.warning('请先登录')
     return
   }
-  
+
   try {
+    // 处理内容
+    blogForm.value.content = processContent(blogForm.value.content, contentProcessOptions.value)
+
     const blogData = {
       ...blogForm.value,
-      authorId: userStore.userId,
-      status: 'draft' // 设置状态为草稿
+      userId: userStore.userId,
     }
-    
+
     await socialApi.createBlog(blogData)
     ElMessage.success('保存草稿成功')
   } catch (error) {
@@ -224,17 +240,18 @@ const cancel = () => {
   router.back()
 }
 
-// 如果是编辑模式，获取博客详情
+/* // 如果是编辑模式，获取博客详情
 onMounted(() => {
   if (isEdit.value) {
     getBlogDetail(route.params.id)
   }
-})
+}) */
 </script>
 
 <style scoped>
 .blog-edit-container {
-  max-width: 1200px;  /* 增加容器最大宽度 */
+  max-width: 1200px;
+  /* 增加容器最大宽度 */
   margin: 20px auto;
   padding: 0 20px;
   padding: 2rem;
@@ -309,7 +326,8 @@ onMounted(() => {
   border-radius: 4px;
   padding: 10px;
   background-color: #fff;
-  width: 100%;  /* 确保编辑器容器占满宽度 */
+  width: 100%;
+  /* 确保编辑器容器占满宽度 */
 }
 
 .editor-container :deep(.el-textarea__inner) {
@@ -318,7 +336,8 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.6;
   min-height: 300px;
-  width: 100%;  /* 确保文本框占满容器宽度 */
+  width: 100%;
+  /* 确保文本框占满容器宽度 */
   font-family: 'Source Code Pro', monospace;
   line-height: 1.8;
   color: #2c3e50;
@@ -339,8 +358,10 @@ onMounted(() => {
 }
 
 .el-form-item :deep(.el-form-item__content) {
-  width: calc(100% - 100px);  /* 减去label的宽度 */
-  margin-left: 0 !important;  /* 覆盖默认的margin */
+  width: calc(100% - 100px);
+  /* 减去label的宽度 */
+  margin-left: 0 !important;
+  /* 覆盖默认的margin */
 }
 
 .el-input :deep(.el-input__inner) {
@@ -352,6 +373,7 @@ onMounted(() => {
 .editor-container :deep(.el-textarea__inner:focus) {
   box-shadow: none;
 }
+
 .el-form-item:last-child {
   margin-top: 2rem;
   padding-top: 2rem;
@@ -376,6 +398,7 @@ onMounted(() => {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+
 @media screen and (max-width: 768px) {
   .blog-edit-container {
     padding: 1rem;

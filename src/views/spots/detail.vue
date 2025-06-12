@@ -8,7 +8,7 @@
           </el-carousel-item>
         </el-carousel>
         <div class="spot-info-overlay">
-          <div class="spot-tags">
+          <div class="spot-tags" v-if="spot && spot.tags && spot.tags.length">
             <el-tag v-for="(tag, index) in spot.tags" :key="index" effect="plain" size="small">{{ tag }}</el-tag>
           </div>
           <h1 class="spot-name">{{ spot.name }}</h1>
@@ -70,84 +70,18 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="游客点评">
-            <div class="spot-reviews">
-              <el-card>
-                <template #header>
-                  <div class="card-header">
-                    <h2>游客点评</h2>
-                    <el-button type="primary" @click="showReviewDialog = true">写点评</el-button>
-                  </div>
-                </template>
-                <div v-if="spot.reviews && spot.reviews.length" class="review-list">
-                  <div v-for="review in spot.reviews" :key="review.id" class="review-item">
-                    <el-avatar :src="review.userAvatar" />
-                    <div class="review-content">
-                      <div class="review-header">
-                        <span class="review-username">{{ review.username }}</span>
-                        <el-rate v-model="review.rating" disabled />
-                      </div>
-                      <p class="review-text">{{ review.content }}</p>
-                      <span class="review-time">{{ review.time }}</span>
-                    </div>
-                  </div>
-                </div>
-                <el-empty v-else description="暂无点评" />
-              </el-card>
-            </div>
-          </el-tab-pane>
+          
 
-          <el-tab-pane label="交通指南">
-            <div class="spot-transportation">
-              <el-card>
-                <template #header>
-                  <div class="card-header">
-                    <h2>交通指南</h2>
-                  </div>
-                </template>
-                <div class="transportation-content">
-                  <div class="transportation-item">
-                    <h3><el-icon>
-                        <Van />
-                      </el-icon> 自驾路线</h3>
-                    <p>{{ spot.drivingDirections || '暂无自驾路线信息' }}</p>
-                  </div>
-                  <div class="transportation-item">
-                    <h3><el-icon>
-                        <Ship />
-                      </el-icon> 公共交通</h3>
-                    <p>{{ spot.publicTransport || '暂无公共交通信息' }}</p>
-                  </div>
-                </div>
-              </el-card>
-            </div>
-          </el-tab-pane>
+          
         </el-tabs>
       </div>
 
-      <el-dialog v-model="showReviewDialog" title="写点评" width="50%">
-        <el-form :model="newReview" label-width="80px">
-          <el-form-item label="评分">
-            <el-rate v-model="newReview.rating" />
-          </el-form-item>
-          <el-form-item label="点评">
-            <el-input v-model="newReview.content" type="textarea" rows="4" placeholder="分享你的游玩体验" />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <span class="dialog-footer">
-            <el-button @click="showReviewDialog = false">取消</el-button>
-            <el-button type="primary" @click="submitReview">发布</el-button>
-          </span>
-        </template>
-      </el-dialog>
+      
     </div>
     <div class="related-spots" v-if="relatedSpots.length > 0">
       <el-card>
         <template #header>
-          <div class="card-header">
-            <h2>相关景点推荐</h2>
-          </div>
+          
         </template>
         <div class="related-spots-container">
           <el-carousel :interval="4000" type="card" height="200px">
@@ -171,6 +105,7 @@
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { attractionApi } from '@/api/attraction'
+import { userApi } from '@/api/user' // 添加这一行
 import { useUserStore } from '@/stores/user'
 import { useSpotStore } from '@/stores/spots'
 import { ElMessage } from 'element-plus'
@@ -186,7 +121,20 @@ const showShareDialog = ref(false)
 const route = useRoute()
 const userStore = useUserStore()
 const loading = ref(true)
-const spot = ref(null)
+
+
+const spot = ref({
+  id: '',
+  name: '',
+  image: '', // 使用首页横幅作为备用图片
+  price: '',
+  rating: 0,
+  location: '',
+  description: '',
+  gallery: [],
+  reviews: [],
+  isFavorite: false
+})
 const showReviewDialog = ref(false)
 const newReview = ref({
   rating: 5,
@@ -261,66 +209,153 @@ const submitReview = async () => {
   }
 }
 
+// const fetchSpotData = async () => {
+//   loading.value = true
+//   error.value = null
+//   retryCount.value = 0
+
+//   try {
+//     // 检查store是否可用
+//     const spotStore = useSpotStore()
+//     if (!spotStore) {
+//       throw new Error('无法访问景点数据存储')
+//     }
+
+//     // 检查路由参数
+//     const spotId = route.params.id
+//     if (!spotId) {
+//       throw new Error('缺少景点ID参数')
+//     }
+
+//     // 并行请求数据
+//     const [spotData, reviewsData, popularityData] = await Promise.all([
+//       attractionApi.getAttractionDetail(id),
+//       attractionApi.getReviews(id),
+//       attractionApi.getPopularity(id)
+//     ])
+
+//     // 检查数据有效性
+//     if (!spotData || Object.keys(spotData).length === 0) {
+//       throw new Error('景点数据为空')
+//     }
+
+//     // 增加浏览量
+//     attractionApi.incrementView(id).catch(error => {
+//       console.error('增加浏览量失败:', error)
+//     })
+
+//     // 处理景点数据
+//     spot.value = {
+//       ...spotData,
+//       reviews: reviewsData || [],
+//       viewCount: popularityData?.viewCount || spotData.viewCount || 0,
+//       images: spotData.images?.length ? spotData.images : [spotData.mainImage || spotData.image]
+//     }
+
+//     // 如果用户已登录，检查是否已收藏
+//     if (userStore.isLoggedIn) {
+//       try {
+//         const isFavorite = await attractionApi.checkFavorite(id, userStore.userId)
+//         spot.value.isFavorite = isFavorite
+//       } catch (error) {
+//         console.error('检查收藏状态失败:', error)
+//       }
+//     }
+//     // 获取相关推荐景点
+//     try {
+//       // 可以根据景点类型或地区获取相关景点
+//       const related = await attractionApi.searchAttractions({
+//         region: spotData.region,
+//         tags: spotData.tags,
+//         limit: 5,
+//         excludeId: id // 排除当前景点
+//       })
+//       relatedSpots.value = related
+//     } catch (error) {
+//       console.error('获取相关景点失败:', error)
+//       relatedSpots.value = []
+//     }
+//   } catch (error) {
+//     console.log(error)
+//     error.value = true
+//     retryCount.value++
+//     spot.value = null
+
+//     // 添加更多错误处理逻辑
+//     if (retryCount.value >= 1) {
+//       useFallbackData()
+//     } else {
+//       ElMessage.error('获取景点详情失败，请稍后重试')
+//     }
+//   } finally {
+//     loading.value = false
+//   }
+// }
+
 const fetchSpotData = async () => {
   loading.value = true
   error.value = null
   retryCount.value = 0
 
   try {
-    // 检查store是否可用
     const spotStore = useSpotStore()
     if (!spotStore) {
       throw new Error('无法访问景点数据存储')
     }
 
-    // 检查路由参数
     const spotId = route.params.id
     if (!spotId) {
       throw new Error('缺少景点ID参数')
     }
 
-    // 并行请求数据
     const [spotData, reviewsData, popularityData] = await Promise.all([
-      attractionApi.getAttractionDetail(id),
-      attractionApi.getReviews(id),
-      attractionApi.getPopularity(id)
+      attractionApi.getAttractionDetail(spotId),
+      attractionApi.getReviews(spotId),
+      attractionApi.getPopularity(spotId)
     ])
 
-    // 检查数据有效性
     if (!spotData || Object.keys(spotData).length === 0) {
       throw new Error('景点数据为空')
     }
 
-    // 增加浏览量
-    attractionApi.incrementView(id).catch(error => {
+
+    let parsedTags = []
+    try {
+      parsedTags = spotData.tags ? JSON.parse(spotData.tags) : []
+    } catch (e) {
+      console.warn('解析 tags 字段失败:', e)
+      parsedTags = []
+    }
+
+    attractionApi.incrementView(spotId).catch(error => {
       console.error('增加浏览量失败:', error)
     })
 
-    // 处理景点数据
     spot.value = {
       ...spotData,
+      tags: parsedTags,
       reviews: reviewsData || [],
       viewCount: popularityData?.viewCount || spotData.viewCount || 0,
       images: spotData.images?.length ? spotData.images : [spotData.mainImage || spotData.image]
     }
 
-    // 如果用户已登录，检查是否已收藏
     if (userStore.isLoggedIn) {
       try {
-        const isFavorite = await attractionApi.checkFavorite(id, userStore.userId)
+        const isFavorite = await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+          method : "GET"
+        })
         spot.value.isFavorite = isFavorite
       } catch (error) {
         console.error('检查收藏状态失败:', error)
       }
     }
-    // 获取相关推荐景点
+
     try {
-      // 可以根据景点类型或地区获取相关景点
       const related = await attractionApi.searchAttractions({
         region: spotData.region,
         tags: spotData.tags,
         limit: 5,
-        excludeId: id // 排除当前景点
+        excludeId: spotId
       })
       relatedSpots.value = related
     } catch (error) {
@@ -331,9 +366,19 @@ const fetchSpotData = async () => {
     console.log(error)
     error.value = true
     retryCount.value++
-    spot.value = null
+    spot.value = {
+      id: '',
+      name: '',
+      image: '', // 使用首页横幅作为备用图片
+      price: '',
+      rating: 0,
+      location: '',
+      description: '',
+      gallery: [],
+      reviews: [],
+      isFavorite: false
+    }
 
-    // 添加更多错误处理逻辑
     if (retryCount.value >= 1) {
       useFallbackData()
     } else {
@@ -343,6 +388,41 @@ const fetchSpotData = async () => {
     loading.value = false
   }
 }
+
+// 修正toggleFavorite方法
+const toggleFavorite = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再收藏景点')
+    return
+  }
+
+  try {
+    const spotId = route.params.id
+    const userId = userStore.userId
+    
+    if (spot.value.isFavorite) {
+      // 如果已收藏，则取消收藏
+      await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+        method: "DELETE"
+      })
+    } else {
+      // 如果未收藏，则添加收藏
+      await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userStore.userId}`,{
+        method: "POST"
+      })
+    }
+    
+    // 更新本地收藏状态
+    spot.value.isFavorite = !spot.value.isFavorite
+    
+    // 显示操作成功消息
+    ElMessage.success(spot.value.isFavorite ? '收藏成功' : '已取消收藏')
+  } catch (error) {
+    console.error('收藏操作失败:', error)
+    ElMessage.error('操作失败，请稍后重试')
+  }
+}
+
 
 // 使用备用数据的方法
 const useFallbackData = () => {
@@ -369,7 +449,18 @@ const viewSpotDetail = (spotId) => {
   // 完全重置状态
   error.value = false
   retryCount.value = 0
-  spot.value = null
+  spot.value = {
+    id: '',
+    name: '',
+    image: '', // 使用首页横幅作为备用图片
+    price: '',
+    rating: 0,
+    location: '',
+    description: '',
+    gallery: [],
+    reviews: [],
+    isFavorite: false
+  }
   relatedSpots.value = []
   loading.value = true
 
@@ -382,7 +473,18 @@ onBeforeUnmount(() => {
   // 重置所有状态
   error.value = false
   loading.value = false
-  spot.value = null
+  spot.value = {
+    id: '',
+    name: '',
+    image: '', // 使用首页横幅作为备用图片
+    price: '',
+    rating: 0,
+    location: '',
+    description: '',
+    gallery: [],
+    reviews: [],
+    isFavorite: false
+  }
   retryCount.value = 0
 })
 
@@ -392,7 +494,18 @@ watch(() => route.params.id, (newId, oldId) => {
     // 重置状态
     error.value = false
     retryCount.value = 0
-    spot.value = null
+    spot.value = {
+      id: '',
+      name: '',
+      image: '', // 使用首页横幅作为备用图片
+      price: '',
+      rating: 0,
+      location: '',
+      description: '',
+      gallery: [],
+      reviews: [],
+      isFavorite: false
+    }
     // 重新获取数据
     fetchSpotData()
   }

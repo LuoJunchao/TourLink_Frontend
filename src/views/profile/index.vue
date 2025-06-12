@@ -10,7 +10,7 @@
         </div>
         <el-button type="primary" @click="handleEdit">编辑资料</el-button>
       </div>
-      <div class="profile-stats">
+      <!-- <div class="profile-stats">
         <div class="stat-item">
           <span class="stat-number">{{ userInfo.guides }}</span>
           <span class="stat-label">发布的攻略</span>
@@ -23,7 +23,7 @@
           <span class="stat-number">{{ userInfo.likes }}</span>
           <span class="stat-label">获得的点赞</span>
         </div>
-      </div>
+      </div> -->
     </el-card>
 
     <!-- 内容区域 -->
@@ -36,16 +36,18 @@
         </div>
         <div class="guides-grid">
           <el-row :gutter="20">
-            <el-col :xs="24" :sm="12" :md="8" v-for="guide in userGuides" :key="guide.id">
+            <el-col :xs="24" :sm="12" :md="8" v-for="guide in userGuides" :key="guide.blogId">
               <el-card class="guide-card" shadow="hover">
-                <el-image :src="guide.coverImage" fit="cover" class="guide-cover" />
-                <h3 class="guide-title">{{ guide.title }}</h3>
-                <p class="guide-preview">{{ guide.content }}</p>
+                <div @click="viewGuideDetail(guide.blogId)">
+                  <el-image :src="guide.coverImage" fit="cover" class="guide-cover" />
+                  <h3 class="guide-title">{{ guide.title }}</h3>
+                  <p class="guide-preview">{{ guide.content }}</p>
+                </div>
                 <div class="guide-footer">
-                  <span class="publish-time">{{ guide.publishTime }}</span>
+                  <span class="publish-time">{{ guide.publishTime.split('T')[0] }}</span>
                   <div class="guide-actions">
-                    <el-button type="primary" link @click="editGuide(guide.id)">编辑</el-button>
-                    <el-button type="danger" link @click="deleteGuide(guide.id)">删除</el-button>
+                    <!-- <el-button type="primary" link @click="editGuide(guide.id)">编辑</el-button>
+                    <el-button type="danger" link @click="deleteGuide(guide.id)">删除</el-button> -->
                   </div>
                 </div>
               </el-card>
@@ -100,9 +102,6 @@
         <el-form-item label="手机号">
           <el-input v-model="editForm.phoneNumber" />
         </el-form-item>
-        <el-form-item label="个人简介">
-          <el-input v-model="editForm.bio" type="textarea" :rows="3" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -137,25 +136,13 @@ const activeTab = ref('guides')
 
 // 用户攻略数据
 const userGuides = ref([
-  {
-    id: 1,
-    title: '桂林山水甲天下 - 三天两夜深度游攻略',
-    content: '桂林山水是中国最美自然景观之一，本攻略将为您详细介绍...',
-    coverImage: '/src/assets/images/guides/guilin.jpg',
-    publishTime: '2025.4.15'
-  }
+  
   // 添加更多攻略数据
 ])
 
 // 收藏的景点数据
 const userCollections = ref([
-  {
-    id: 1,
-    name: '桂林山水',
-    location: '广西桂林',
-    image: '/src/assets/images/spots/guilin.jpg',
-    price: 199
-  }
+  
   // 添加更多收藏数据
 ])
 
@@ -190,7 +177,7 @@ const handleAvatarSuccess = (response) => {
 // 引入userApi和userStore
 import { userApi } from '../../api/user'
 import { useUserStore } from '../../stores/user'
-
+import { attractionApi } from '../../api/attraction' 
 const userStore = useUserStore()
 const userId = localStorage.getItem('userId')
 
@@ -211,9 +198,30 @@ const fetchUserInfo = async () => {
 // 获取用户收藏列表
 const fetchUserCollections = async () => {
   try {
-    userCollections.value = await userStore.getFavorites()
+    if (!userId) {
+      ElMessage.error('未找到用户ID')
+      return
+    }
+    
+    // 使用attractionApi获取用户收藏的景点
+    const favorites = await fetch(`http://localhost:9082/api/attraction-favorites/user/${userId}`,{
+      method: "GET"
+    })
+    
+    // 处理返回的数据格式，确保与模板中使用的格式一致
+    userCollections.value = favorites.map(favorite => ({
+      id: favorite.attraction.attractionId,
+      name: favorite.attraction.name,
+      image: favorite.attraction.images && favorite.attraction.images.length > 0 
+        ? favorite.attraction.images[0] 
+        : '/src/assets/images/default-spot.jpg',
+      location: favorite.attraction.region || favorite.attraction.address,
+      price: favorite.attraction.price || 0
+    }))
   } catch (error) {
+    console.error('获取收藏列表失败:', error)
     ElMessage.error('获取收藏列表失败')
+    userCollections.value = []
   }
 }
 
@@ -225,7 +233,7 @@ const fetchUserGuides = async () => {
       return
     }
     // 使用socialApi获取用户博客列表
-    const response = await request(`/api/social/blogs/user/${userId}`)
+    const response = await socialApi.getUserBlogs(userId)
     userGuides.value = response
   } catch (error) {
     ElMessage.error('获取攻略列表失败')
@@ -239,31 +247,20 @@ onMounted(async () => {
   await fetchUserGuides()
 })
 
-// 更新用户信息
-// 在编辑表单中添加邮箱和手机号字段
-const editForm = ref({
-  email: '',
-  phoneNumber: ''
-})
 
-// 在editForm中添加相应字段
-const editForm = ref({
-  username: '',
-  avatar: '',
-  bio: '',
-  email: '',
-  phoneNumber: ''
-})
 
 // 保存个人资料
 const saveProfile = async () => {
   try {
-    await userStore.updateUser(userStore.userId, {
+    // 创建更新数据对象
+    const updateData = {
       username: editForm.value.username,
       email: editForm.value.email,
       phoneNumber: editForm.value.phoneNumber,
       // 注意：后端API不支持直接更新bio，这可能需要单独的API
-    })
+    }
+    
+    await userApi.updateUser(userStore.userId, updateData)
     
     // 更新本地显示的用户信息
     userInfo.value.username = editForm.value.username
@@ -302,19 +299,23 @@ const deleteGuide = async (guideId) => {
   }
 }
 
-// 取消收藏
+// 修正removeCollection方法
 const removeCollection = async (spotId) => {
   try {
-    const userId = localStorage.getItem('userId')
     if (!userId) {
       ElMessage.error('未找到用户ID')
       return
     }
-    await userApi.removeFavorite(userId, spotId)
+    
+    // 使用attractionApi取消收藏
+    await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userId}`,{
+      method: 'DELETE'
+    })
+    
     // 更新本地数据
     userCollections.value = userCollections.value.filter(spot => spot.id !== spotId)
-    ElMessage.success('取消收藏成功')
   } catch (error) {
+    console.error('取消收藏失败:', error)
     ElMessage.error('取消收藏失败')
   }
 }
@@ -322,6 +323,10 @@ const removeCollection = async (spotId) => {
 // 新建攻略
 const createGuide = () => {
   router.push('/guides/edit')
+}
+// 在script部分添加viewGuideDetail方法
+const viewGuideDetail = (guideId) => {
+  router.push(`/guides/${guideId}`)
 }
 </script>
 
@@ -427,9 +432,9 @@ const createGuide = () => {
 
 .guide-cover {
   width: 100%;
-  height: 220px;
-  object-fit: cover;
-  transition: transform 0.3s ease;
+  height: 180px;
+  border-radius: 8px;
+  margin-bottom: 10px;
 }
 
 .guide-card:hover .guide-cover {

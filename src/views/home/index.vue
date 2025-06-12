@@ -85,7 +85,11 @@ const fetchAllSpots = async () => {
 // 新增：切换视图
 const switchView = (view) => {
   currentView.value = view
-  if (view === 'popular') {
+  
+  // 如果用户已登录且当前视图是'all'，则使用推荐
+  if (isLoggedIn.value && view === 'all') {
+    getRecommendations()
+  } else if (view === 'popular') {
     fetchPopularSpots()
   } else if (view === 'topRated') {
     fetchTopRatedSpots()
@@ -146,6 +150,7 @@ const handleTagClick = (tag) => {
   }
 }
 
+
 // 获取用户收藏
 const fetchUserFavorites = async () => {
   if (!isLoggedIn.value) return
@@ -188,11 +193,70 @@ const viewSpotDetail = (spot) => {
 }
 
 onMounted(() => {
-  fetchPopularSpots()
+  // 如果用户已登录，使用推荐系统
+  if (isLoggedIn.value) {
+    getRecommendations()
+  } else {
+    // 未登录时使用默认获取方式
+    fetchAllSpots()
+  }
+  
   fetchSpotCategories()
   fetchUserFavorites()
   fetchRecentReviews()
 })
+
+
+// 加载状态
+const loading = ref(false)
+
+// 修改getRecommendations函数
+const getRecommendations = async () => {
+  // 如果用户未登录，不获取推荐
+  if (!isLoggedIn.value) return
+  
+  try {
+    loading.value = true
+    const userId = userStore.userId
+    console.log("获取推荐")
+    const response = await fetch('http://localhost:8000/recommend_attractions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        top_k_tags: 5,
+        top_k_attractions: 8,  // 限制为8个推荐景点
+        alpha: 0.8
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    console.log('推荐结果:', result.data)
+    
+    // 获取推荐景点的详细信息并替换popularSpots
+    if (result.data && result.data.length > 0) {
+      const attractionIds = result.data
+      const attractions = await attractionApi.getAttractionsByIds(attractionIds)
+      popularSpots.value = attractions || []
+    }
+  } catch (error) {
+    console.error('获取推荐失败:', error)
+    ElMessage.error('获取推荐失败，将显示默认景点')
+    // 获取失败时回退到默认景点获取方式
+    fetchAllSpots()
+  } finally {
+    loading.value = false
+  }
+}
+
+
+
 </script>
 
 <template>
@@ -226,7 +290,12 @@ onMounted(() => {
     <!-- 热门景点部分 -->
     <section class="section popular-spots-section">
       <div class="container">
-        <h2 class="section-title">探索景点</h2>
+        <h2 class="section-title">
+          {{ isLoggedIn && currentView === 'all' ? '为您推荐' : '探索景点' }}
+        </h2>
+        <p class="section-subtitle" v-if="isLoggedIn && currentView === 'all'">
+          根据您的兴趣为您精选的景点
+        </p>
 
         <div class="quick-filters">
           <el-button 
