@@ -151,6 +151,13 @@ class SocialApi {
     });
   }
 
+  // 获取点赞状态
+  getLikeStatus(blogId, userId) {
+    return request("/social/api/likes/status", {
+      params: { blogId, userId },
+    });
+  }
+
   // 浏览操作
   viewBlog(blogId, userId) {
     return request("/social/api/views", {
