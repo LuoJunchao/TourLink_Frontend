@@ -201,6 +201,16 @@ class SocialApi {
   getUserBlogs(userId) {
     return request(`/social/api/blogs/user/${userId}`);
   }
+
+  getBlogsByIds(blogIds) {
+    return request("/social/api/blogs/batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(blogIds),
+    });
+  }
 }
 
 export const socialApi = new SocialApi();
