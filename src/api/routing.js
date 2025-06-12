@@ -14,7 +14,8 @@ class RoutingApi {
   createItinerary(data) {
     return request('/routing/api/path/plan', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      timeout: 30000, // 单独设置超时：30 秒
     })
   }
 

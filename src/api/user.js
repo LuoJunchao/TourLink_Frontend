@@ -63,7 +63,7 @@ class UserApi {
     if (!userId) {
       return Promise.reject(new Error('未找到用户ID'))
     }
-    return this.getUserInfo(userId)
+    return userId
   }
   
   // 用户收藏操作
