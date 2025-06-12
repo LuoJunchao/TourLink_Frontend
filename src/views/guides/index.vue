@@ -190,52 +190,51 @@ const handleCurrentChange = (page) => {
 //获取推荐
 const getRecommendations = async () => {
   // 如果用户未登录，不获取推荐
-  if (!isLoggedIn.value) return
-  
+  if (!isLoggedIn.value) return;
+
   try {
-    loading.value = true
-    const userId = userStore.userId
-    console.log("获取推荐")
-    const response = await fetch('http://localhost:8000/recommend_blogs', {
-      method: 'POST',
+    loading.value = true;
+    const userId = userStore.userId;
+    console.log("获取推荐");
+    const response = await fetch("http://localhost:8000/recommend_blogs", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         user_id: userId,
         top_k_tags: 5,
-        top_k_attractions: 8,  // 限制为8个推荐景点
+        top_k_attractions: 8, // 限制为8个推荐景点
         alpha: 0.8
       })
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const result = await response.json()
-    console.log('推荐结果:', result.data)
-    
-    // 获取推荐景点的详细信息并替换popularSpots
+    const result = await response.json();
+    console.log("推荐结果:", result.data);
+
+    // 获取推荐景点的详细信息并替换 popularSpots
     if (result.data && result.data.length > 0) {
-      const attractionIds = result.data
-      const attractions = await socialApi.getBlogsByIds(attractionIds)
-      popularSpots.value = attractions || []
+      const attractionIds = result.data;
+      const attractions = await socialApi.getBlogsByIds(attractionIds);
+      guides.value = attractions || [];
     }
   } catch (error) {
-    console.error('获取推荐失败:', error)
-    ElMessage.error('获取推荐失败，将显示默认景点')
-    // 获取失败时回退到默认景点获取方式
-    fetchAllSpots()
+    console.error("获取推荐失败:", error);
+    ElMessage.error("获取推荐失败，将显示默认景点");
+    fetchGuides()
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 // 页面加载时获取数据
 onMounted(() => {
   getRecommendations()
-  fetchGuides()
+
 })
 </script>
 
