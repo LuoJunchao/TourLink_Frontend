@@ -137,7 +137,7 @@ const fetchGuides = async (params = {}) => {
         publishTime: blog.publishTime ? new Date(blog.publishTime).toLocaleDateString() : '未知时间',
         title: blog.title || '无标题',
         content: blog.content ? (blog.content.substring(0, 100) + '...') : '',
-        coverImage: blog.coverImage || '/src/assets/images/guides/default.jpg',
+        coverImage: blog.coverImage ?? '/src/assets/images/spots/default.jpg',
         likes: blog.likeCount || 0,
         comments: blog.commentCount || 0,
         isLiked: blog.isLiked || false
@@ -247,6 +247,7 @@ const fetchGuidesWithRecommendation = async (params = {}) => {
         if (result.data && result.data.length > 0) {
           console.log("推荐结果:", result.data);
           blogs = await socialApi.getBlogsByIds(result.data);
+          console.log("tuituituituitui:", blogs);
         } else {
           console.warn("推荐为空，使用默认博客");
         }

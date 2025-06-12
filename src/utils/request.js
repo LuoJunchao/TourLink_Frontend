@@ -29,8 +29,10 @@ const retryRequest = async (url, options, retries = 0) => {
 };
 
 const request = async (url, options = {}) => {
+  const timeout = options.timeout || TIMEOUT;
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   // 检查是否存在相同请求
   const requestKey = getRequestKey(url, options);

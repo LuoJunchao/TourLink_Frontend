@@ -36,18 +36,6 @@
             </el-col>
 
             <el-col :xs="24" :sm="24" :md="12">
-              <el-form-item label="预算" prop="budget">
-                <el-slider
-                  v-model="formData.budget"
-                  :min="0"
-                  :max="10000"
-                  :step="100"
-                  :format-tooltip="value => `${value}元`"
-                />
-              </el-form-item>
-            </el-col>
-
-            <el-col :xs="24" :sm="24" :md="12">
               <el-form-item label="出发地" prop="fromCity">
                 <el-select
                   v-model="formData.fromCity"
@@ -158,7 +146,7 @@
 
       <!-- 结果为空时显示 -->
       <el-empty 
-        v-if="showResult && (!planResult || !planResult.routes || planResult.routes.length === 0)" 
+        v-if="showResult && (!planResult || !planResult.dailyRoutes || planResult.dailyRoutes.length === 0)"
         description="未找到合适的行程规划" 
         :image-size="200"
       >
@@ -169,7 +157,7 @@
       </el-empty>
       
       <!-- 结果展示区域 -->
-      <div v-if="showResult && planResult && planResult.routes && planResult.routes.length > 0" class="result-container">
+      <div v-if="showResult && planResult && planResult.dailyRoutes && planResult.dailyRoutes.length > 0" class="result-container">
         <div class="result-header">
           <h2>您的旅行计划</h2>
           <div class="result-actions">
@@ -197,23 +185,23 @@
           </template>
           <div class="transport-info">
             <div class="transport-route">
-              <div class="station">{{ planResult.transport.fromStation }}</div>
+              <div class="station">{{ planResult.transportEstimate.fromStation }}</div>
               <div class="transport-arrow">
-                <span class="transport-type">{{ getTransportTypeText(planResult.transport.type) }}</span>
+                <span class="transport-type">{{ getTransportTypeText(planResult.transportEstimate.type) }}</span>
                 <el-divider direction="horizontal">
                   <i class="el-icon-right"></i>
                 </el-divider>
               </div>
-              <div class="station">{{ planResult.transport.toStation }}</div>
+              <div class="station">{{ planResult.transportEstimate.toStation }}</div>
             </div>
             <div class="transport-details">
               <div class="detail-item">
                 <span class="label">预计距离:</span>
-                <span class="value">{{ planResult.transport.distanceKm.toFixed(1) }} 公里</span>
+                <span class="value">{{ planResult.transportEstimate.estimatedDistance.toFixed(1) }} 公里</span>
               </div>
               <div class="detail-item">
                 <span class="label">预计费用:</span>
-                <span class="value">¥{{ planResult.transport.estimatedPrice.toFixed(2) }}</span>
+                <span class="value">¥{{ planResult.transportEstimate.estimatedPrice.toFixed(2) }}</span>
               </div>
             </div>
           </div>
@@ -223,7 +211,7 @@
         <div class="daily-routes">
           <el-timeline>
             <el-timeline-item 
-              v-for="route in planResult.routes" 
+              v-for="route in planResult.dailyRoutes"
               :key="route.day"
               :timestamp="`第 ${route.day} 天`"
               placement="top"
@@ -276,7 +264,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {ElLoading, ElMessage, ElMessageBox} from 'element-plus'
 import { routingApi } from '../../api/routing'
 import { userApi } from '../../api/user'
 import html2canvas from 'html2canvas'
@@ -433,31 +421,33 @@ const handleSubmit = async () => {
     ElMessage.warning('出发城市和目的地不能相同')
     return
   }
-
-  if (formData.preference.selectedTags.length === 0) {
-    ElMessage.warning('请至少选择一个偏好标签')
-    return
-  }
   
   if (!formData.dateRange || formData.dateRange.length !== 2) {
     ElMessage.warning('请选择旅行日期')
     return
   }
-
+  let userId;
+  userId = await userApi.getCurrentUser();
   loading.value = true
   try {
     // 构建请求参数
+    const transportMap = {
+      train: 'TRAIN',
+      plane: 'AIRPORT'
+    };
     const requestData = {
       fromCity: formData.fromCity,
       toCity: formData.toCity,
       maxDays: calculatedDays.value, // 使用计算得到的天数
+      userId: userId,
+      transportMode: transportMap[formData.transportation[0]] || '',
       preference: {
         selectedTags: formData.preference.selectedTags,
         // 为每个标签设置相同的权重
-        tagWeights: Object.fromEntries(formData.preference.selectedTags.map(tag => [tag, 1]))
+        tagWeights: null
       }
     }
-
+    console.log(requestData);
     // 调用API
     const result = await routingApi.createItinerary(requestData)
     planResult.value = result
@@ -521,8 +511,8 @@ const saveItinerary = () => {
       toCity: formData.toCity,
       dateRange: formData.dateRange,
       createdAt: new Date().toISOString(),
-      routes: planResult.value.routes,
-      transport: planResult.value.transport
+      routes: planResult.value.dailyRoutes,
+      transport: planResult.value.transportEstimate
     }
     
     // 获取已保存的行程
@@ -555,6 +545,11 @@ const handleExport = (command) => {
       break
   }
 }
+// 添加格式化日期函数
+const formatDate = (date) => {
+  const d = new Date(date)
+  return `${d.getFullYear()}年${(d.getMonth() + 1).toString().padStart(2, '0')}月${d.getDate().toString().padStart(2, '0')}日`
+}
 
 // 导出为PDF
 const exportToPDF = async () => {
@@ -562,57 +557,264 @@ const exportToPDF = async () => {
     ElMessage.warning('没有可导出的行程')
     return
   }
-  
+
   try {
-    // 显示加载提示
-    const loadingInstance = ElMessage({
-      type: 'info',
-      message: '正在生成PDF，请稍候...',
-      duration: 0
+    const loadingInstance = ElLoading.service({
+      lock: true,
+      text: '正在生成PDF，请稍候...',
+      background: 'rgba(0, 0, 0, 0.7)',
     })
-    
-    // 获取要导出的DOM元素
-    const element = document.querySelector('.result-container')
-    
-    // 使用html2canvas将DOM元素转换为canvas
-    const canvas = await html2canvas(element, {
-      scale: 2, // 提高清晰度
-      useCORS: true, // 允许加载跨域图片
+
+    // 创建新的容器用于导出（避免影响页面显示）
+    const exportContainer = document.createElement('div')
+    exportContainer.className = 'export-container'
+    exportContainer.style.position = 'absolute'
+    exportContainer.style.left = '-9999px'
+    exportContainer.style.width = '800px'
+    document.body.appendChild(exportContainer)
+
+    // 构建PDF内容
+    const content = `
+      <div class="pdf-header">
+        <h1>${formData.fromCity}到${formData.toCity}的${calculatedDays.value}天行程计划</h1>
+        <div class="pdf-meta">
+          <div>行程日期: ${formatDate(formData.dateRange[0])} - ${formatDate(formData.dateRange[1])}</div>
+          <div>预算: ¥${formData.budget.toFixed(2)}</div>
+          <div>导出时间: ${new Date().toLocaleString('zh-CN')}</div>
+        </div>
+      </div>
+
+      <div class="pdf-section">
+        <h2>交通信息</h2>
+        <div class="transport-info">
+          <div class="transport-route">
+            <div class="station">${planResult.value.transportEstimate.fromStation}</div>
+            <div class="transport-arrow">
+              <span class="transport-type">${getTransportTypeText(planResult.value.transportEstimate.type)}</span>
+              <div class="arrow">→</div>
+            </div>
+            <div class="station">${planResult.value.transportEstimate.toStation}</div>
+          </div>
+          <div class="transport-details">
+            <div class="detail-item">
+              <span class="label">预计距离:</span>
+              <span class="value">${planResult.value.transportEstimate.estimatedDistance.toFixed(1)} 公里</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">预计费用:</span>
+              <span class="value">¥${planResult.value.transportEstimate.estimatedPrice.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pdf-section">
+        <h2>每日行程</h2>
+        ${planResult.value.dailyRoutes.map(route => `
+          <div class="day-plan">
+            <h3>第 ${route.day} 天</h3>
+            <div class="spots">
+              ${route.spots.map((item, index) => `
+                <div class="spot-item">
+                  <div class="time">${item.assignedTimeSlot}</div>
+                  <div class="spot-detail">
+                    <div class="spot-name">${item.spot.name}</div>
+                    <div class="spot-meta">
+                      <span class="price">${item.spot.price > 0 ? `¥${item.spot.price}` : '免费'}</span>
+                      <span class="rating">评分: ${item.spot.rating.toFixed(1)}</span>
+                      <span class="sales">${item.spot.sales}人去过</span>
+                    </div>
+                    <div class="spot-tags">${item.spot.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="pdf-footer">
+        <p>感谢使用我们的旅行规划服务</p>
+        <p>© ${new Date().getFullYear()} 旅行规划助手</p>
+      </div>
+    `
+
+    exportContainer.innerHTML = content
+
+    // 添加样式
+    const style = document.createElement('style')
+    style.innerHTML = `
+      .export-container {
+        font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #333;
+        line-height: 1.6;
+        padding: 30px;
+        box-sizing: border-box;
+      }
+      .pdf-header {
+        text-align: center;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #3a8ee6;
+        padding-bottom: 20px;
+      }
+      .pdf-header h1 {
+        font-size: 24px;
+        color: #3a8ee6;
+        margin-bottom: 15px;
+      }
+      .pdf-meta {
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        font-size: 14px;
+        color: #666;
+      }
+      .pdf-section {
+        margin-bottom: 30px;
+        page-break-inside: avoid;
+      }
+      .pdf-section h2 {
+        font-size: 20px;
+        color: #3a8ee6;
+        border-left: 4px solid #3a8ee6;
+        padding-left: 10px;
+        margin-bottom: 15px;
+      }
+      .transport-info {
+        background: #f5f9ff;
+        border-radius: 8px;
+        padding: 20px;
+      }
+      .transport-route {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        font-size: 18px;
+        font-weight: bold;
+      }
+      .transport-arrow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+      }
+      .transport-type {
+        background: #3a8ee6;
+        color: white;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 14px;
+        margin-bottom: 5px;
+      }
+      .transport-details {
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        font-size: 16px;
+      }
+      .detail-item {
+        display: flex;
+        gap: 8px;
+      }
+      .label {
+        color: #666;
+      }
+      .value {
+        font-weight: bold;
+      }
+      .day-plan {
+        margin-bottom: 30px;
+        page-break-inside: avoid;
+      }
+      .day-plan h3 {
+        font-size: 18px;
+        color: #3a8ee6;
+        margin-bottom: 15px;
+        padding-bottom: 5px;
+        border-bottom: 1px dashed #ddd;
+      }
+      .spot-item {
+        display: flex;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #eee;
+      }
+      .time {
+        min-width: 80px;
+        font-weight: bold;
+        color: #3a8ee6;
+      }
+      .spot-detail {
+        flex: 1;
+      }
+      .spot-name {
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 16px;
+      }
+      .spot-meta {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: #666;
+      }
+      .spot-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .tag {
+        background: #ecf5ff;
+        color: #3a8ee6;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .pdf-footer {
+        text-align: center;
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid #ddd;
+        color: #999;
+        font-size: 14px;
+      }
+    `
+    exportContainer.appendChild(style)
+
+    // 生成PDF
+    const canvas = await html2canvas(exportContainer, {
+      scale: 3,
+      useCORS: true,
       logging: false,
       backgroundColor: '#ffffff'
     })
-    
-    // 计算PDF尺寸（A4纸，宽210mm，高根据内容自适应）
-    const imgWidth = 210
-    const pageHeight = 297
+
+    const imgData = canvas.toDataURL('image/png')
+    const imgWidth = 210 // A4宽210mm
+    const pageHeight = 297 // A4高297mm
     const imgHeight = canvas.height * imgWidth / canvas.width
     let heightLeft = imgHeight
     let position = 0
-    
-    // 创建PDF文档
+
     const pdf = new jsPDF('p', 'mm', 'a4')
-    const imgData = canvas.toDataURL('image/png')
-    
-    // 添加标题
-    pdf.setFontSize(16)
-    pdf.text(`${formData.fromCity}到${formData.toCity}的${formData.maxDays}天行程`, 105, 15, { align: 'center' })
-    
-    // 添加内容（可能需要分页）
-    pdf.addImage(imgData, 'PNG', 0, 30, imgWidth, imgHeight)
-    heightLeft -= pageHeight - 30
-    
-    // 如果内容超过一页，添加新页面
+
+    // 添加第一页
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    // 添加剩余页
     while (heightLeft > 0) {
       position = heightLeft - imgHeight
       pdf.addPage()
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
       heightLeft -= pageHeight
     }
-    
-    // 保存PDF
+
+    // 保存并清理
     pdf.save(`旅行计划_${formData.fromCity}到${formData.toCity}.pdf`)
-    
-    // 关闭加载提示
+    document.body.removeChild(exportContainer)
     loadingInstance.close()
     ElMessage.success('PDF导出成功')
   } catch (error) {
@@ -621,37 +823,249 @@ const exportToPDF = async () => {
   }
 }
 
-// 导出为图片
+// 导出为图片（使用相同的优化内容）
 const exportToImage = async () => {
   if (!planResult.value) {
     ElMessage.warning('没有可导出的行程')
     return
   }
-  
+
   try {
-    // 显示加载提示
-    const loadingInstance = ElMessage({
-      type: 'info',
-      message: '正在生成图片，请稍候...',
-      duration: 0
+    const loadingInstance = ElLoading.service({
+      lock: true,
+      text: '正在生成图片，请稍候...',
+      background: 'rgba(0, 0, 0, 0.7)',
     })
-    
-    // 获取要导出的DOM元素
-    const element = document.querySelector('.result-container')
-    
-    // 使用html2canvas将DOM元素转换为canvas
-    const canvas = await html2canvas(element, {
-      scale: 2, // 提高清晰度
-      useCORS: true, // 允许加载跨域图片
+
+    const exportContainer = document.createElement('div')
+    exportContainer.className = 'export-container'
+    exportContainer.style.position = 'absolute'
+    exportContainer.style.left = '-9999px'
+    exportContainer.style.width = '800px'
+    document.body.appendChild(exportContainer)
+
+    // 使用与PDF相同的HTML内容
+    // 构建PDF内容
+    const content = `
+      <div class="pdf-header">
+        <h1>${formData.fromCity}到${formData.toCity}的${calculatedDays.value}天行程计划</h1>
+        <div class="pdf-meta">
+          <div>行程日期: ${formatDate(formData.dateRange[0])} - ${formatDate(formData.dateRange[1])}</div>
+          <div>预算: ¥${formData.budget.toFixed(2)}</div>
+          <div>导出时间: ${new Date().toLocaleString('zh-CN')}</div>
+        </div>
+      </div>
+
+      <div class="pdf-section">
+        <h2>交通信息</h2>
+        <div class="transport-info">
+          <div class="transport-route">
+            <div class="station">${planResult.value.transportEstimate.fromStation}</div>
+            <div class="transport-arrow">
+              <span class="transport-type">${getTransportTypeText(planResult.value.transportEstimate.type)}</span>
+              <div class="arrow">→</div>
+            </div>
+            <div class="station">${planResult.value.transportEstimate.toStation}</div>
+          </div>
+          <div class="transport-details">
+            <div class="detail-item">
+              <span class="label">预计距离:</span>
+              <span class="value">${planResult.value.transportEstimate.estimatedDistance.toFixed(1)} 公里</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">预计费用:</span>
+              <span class="value">¥${planResult.value.transportEstimate.estimatedPrice.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pdf-section">
+        <h2>每日行程</h2>
+        ${planResult.value.dailyRoutes.map(route => `
+          <div class="day-plan">
+            <h3>第 ${route.day} 天</h3>
+            <div class="spots">
+              ${route.spots.map((item, index) => `
+                <div class="spot-item">
+                  <div class="time">${item.assignedTimeSlot}</div>
+                  <div class="spot-detail">
+                    <div class="spot-name">${item.spot.name}</div>
+                    <div class="spot-meta">
+                      <span class="price">${item.spot.price > 0 ? `¥${item.spot.price}` : '免费'}</span>
+                      <span class="rating">评分: ${item.spot.rating.toFixed(1)}</span>
+                      <span class="sales">${item.spot.sales}人去过</span>
+                    </div>
+                    <div class="spot-tags">${item.spot.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="pdf-footer">
+        <p>感谢使用我们的旅行规划服务</p>
+        <p>© ${new Date().getFullYear()} 旅行规划助手</p>
+      </div>
+    `
+
+    exportContainer.innerHTML = content
+
+    // 添加样式
+    const style = document.createElement('style')
+    style.innerHTML = `
+      .export-container {
+        font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #333;
+        line-height: 1.6;
+        padding: 30px;
+        box-sizing: border-box;
+      }
+      .pdf-header {
+        text-align: center;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #3a8ee6;
+        padding-bottom: 20px;
+      }
+      .pdf-header h1 {
+        font-size: 24px;
+        color: #3a8ee6;
+        margin-bottom: 15px;
+      }
+      .pdf-meta {
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        font-size: 14px;
+        color: #666;
+      }
+      .pdf-section {
+        margin-bottom: 30px;
+        page-break-inside: avoid;
+      }
+      .pdf-section h2 {
+        font-size: 20px;
+        color: #3a8ee6;
+        border-left: 4px solid #3a8ee6;
+        padding-left: 10px;
+        margin-bottom: 15px;
+      }
+      .transport-info {
+        background: #f5f9ff;
+        border-radius: 8px;
+        padding: 20px;
+      }
+      .transport-route {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        font-size: 18px;
+        font-weight: bold;
+      }
+      .transport-arrow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+      }
+      .transport-type {
+        background: #3a8ee6;
+        color: white;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 14px;
+        margin-bottom: 5px;
+      }
+      .transport-details {
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        font-size: 16px;
+      }
+      .detail-item {
+        display: flex;
+        gap: 8px;
+      }
+      .label {
+        color: #666;
+      }
+      .value {
+        font-weight: bold;
+      }
+      .day-plan {
+        margin-bottom: 30px;
+        page-break-inside: avoid;
+      }
+      .day-plan h3 {
+        font-size: 18px;
+        color: #3a8ee6;
+        margin-bottom: 15px;
+        padding-bottom: 5px;
+        border-bottom: 1px dashed #ddd;
+      }
+      .spot-item {
+        display: flex;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #eee;
+      }
+      .time {
+        min-width: 80px;
+        font-weight: bold;
+        color: #3a8ee6;
+      }
+      .spot-detail {
+        flex: 1;
+      }
+      .spot-name {
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 16px;
+      }
+      .spot-meta {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: #666;
+      }
+      .spot-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .tag {
+        background: #ecf5ff;
+        color: #3a8ee6;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .pdf-footer {
+        text-align: center;
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid #ddd;
+        color: #999;
+        font-size: 14px;
+      }
+    `
+    exportContainer.appendChild(style)
+    // ... 此处内容与exportToPDF中相同 ...
+
+    const canvas = await html2canvas(exportContainer, {
+      scale: 3,
+      useCORS: true,
       logging: false,
       backgroundColor: '#ffffff'
     })
-    
-    // 转换为图片并下载
+
     canvas.toBlob((blob) => {
       saveAs(blob, `旅行计划_${formData.fromCity}到${formData.toCity}.png`)
-      
-      // 关闭加载提示
+      document.body.removeChild(exportContainer)
       loadingInstance.close()
       ElMessage.success('图片导出成功')
     })
@@ -661,50 +1075,212 @@ const exportToImage = async () => {
   }
 }
 
-// 导出为文本
+// 导出为文本（优化内容）
 const exportToText = () => {
   if (!planResult.value) {
     ElMessage.warning('没有可导出的行程')
     return
   }
-  
+
   try {
-    // 构建文本内容
-    let content = `${formData.fromCity}到${formData.toCity}的${formData.maxDays}天行程\n\n`
-    
-    // 添加交通信息
-    content += `城际交通:\n`
-    content += `出发: ${planResult.value.transport.fromStation}\n`
-    content += `到达: ${planResult.value.transport.toStation}\n`
-    content += `交通方式: ${getTransportTypeText(planResult.value.transport.type)}\n`
-    content += `预计距离: ${planResult.value.transport.distanceKm.toFixed(1)} 公里\n`
-    content += `预计费用: ¥${planResult.value.transport.estimatedPrice.toFixed(2)}\n\n`
-    
-    // 添加每日行程
-    planResult.value.routes.forEach(route => {
-      content += `第 ${route.day} 天:\n`
-      
+    let content = `旅行计划：${formData.fromCity}到${formData.toCity}的${calculatedDays.value}天行程\n\n`
+
+    // 添加行程概览
+    content += `行程概览\n`
+    content += `====================\n`
+    content += `出发日期: ${formatDate(formData.dateRange[0])} 至 ${formatDate(formData.dateRange[1])}\n`
+    content += `预算: ¥${formData.budget.toFixed(2)}\n`
+    content += `出发城市: ${formData.fromCity}\n`
+    content += `目的地: ${formData.toCity}\n\n`
+
+    // 交通信息
+    content += `交通信息\n`
+    content += `====================\n`
+    content += `出发站: ${planResult.value.transportEstimate.fromStation}\n`
+    content += `到达站: ${planResult.value.transportEstimate.toStation}\n`
+    content += `交通方式: ${getTransportTypeText(planResult.value.transportEstimate.type)}\n`
+    content += `预计距离: ${planResult.value.transportEstimate.estimatedDistance.toFixed(1)} 公里\n`
+    content += `预计费用: ¥${planResult.value.transportEstimate.estimatedPrice.toFixed(2)}\n\n`
+
+    // 每日行程
+    content += `每日行程\n`
+    content += `====================\n`
+
+    planResult.value.dailyRoutes.forEach(route => {
+      content += `第 ${route.day} 天\n`
+      content += `----------------------\n`
+
       route.spots.forEach(item => {
-        content += `${item.assignedTimeSlot}: ${item.spot.name}\n`
-        content += `  标签: ${item.spot.tags.join(', ')}\n`
-        content += `  价格: ${item.spot.price > 0 ? `¥${item.spot.price}` : '免费'}\n`
-        content += `  评分: ${item.spot.rating.toFixed(1)}\n`
-        content += `  销量: ${item.spot.sales}人去过\n\n`
+        content += `${item.assignedTimeSlot} ${item.spot.name}\n`
+        content += `  - 价格: ${item.spot.price > 0 ? `¥${item.spot.price}` : '免费'}\n`
+        content += `  - 评分: ${item.spot.rating.toFixed(1)}\n`
+        content += `  - 标签: ${item.spot.tags.join(', ')}\n\n`
       })
+
+      content += '\n'
     })
-    
-    // 创建Blob对象
+
+    // 添加页脚
+    content += `\n导出时间: ${new Date().toLocaleString('zh-CN')}\n`
+    content += `© ${new Date().getFullYear()} 旅行规划助手`
+
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-    
-    // 下载文件
     saveAs(blob, `旅行计划_${formData.fromCity}到${formData.toCity}.txt`)
-    
     ElMessage.success('文本导出成功')
   } catch (error) {
     console.error('导出文本失败:', error)
     ElMessage.error('导出文本失败，请稍后重试')
   }
 }
+// // 导出为PDF
+// const exportToPDF = async () => {
+//   if (!planResult.value) {
+//     ElMessage.warning('没有可导出的行程')
+//     return
+//   }
+//
+//   try {
+//     // 显示加载提示
+//     const loadingInstance = ElMessage({
+//       type: 'info',
+//       message: '正在生成PDF，请稍候...',
+//       duration: 0
+//     })
+//
+//     // 获取要导出的DOM元素
+//     const element = document.querySelector('.result-container')
+//
+//     // 使用html2canvas将DOM元素转换为canvas
+//     const canvas = await html2canvas(element, {
+//       scale: 2, // 提高清晰度
+//       useCORS: true, // 允许加载跨域图片
+//       logging: false,
+//       backgroundColor: '#ffffff'
+//     })
+//
+//     // 计算PDF尺寸（A4纸，宽210mm，高根据内容自适应）
+//     const imgWidth = 210
+//     const pageHeight = 297
+//     const imgHeight = canvas.height * imgWidth / canvas.width
+//     let heightLeft = imgHeight
+//     let position = 0
+//
+//     // 创建PDF文档
+//     const pdf = new jsPDF('p', 'mm', 'a4')
+//     const imgData = canvas.toDataURL('image/png')
+//
+//     // 添加标题
+//     pdf.setFontSize(16)
+//     pdf.text(`${formData.fromCity}到${formData.toCity}的${formData.maxDays}天行程`, 105, 15, { align: 'center' })
+//
+//     // 添加内容（可能需要分页）
+//     pdf.addImage(imgData, 'PNG', 0, 30, imgWidth, imgHeight)
+//     heightLeft -= pageHeight - 30
+//
+//     // 如果内容超过一页，添加新页面
+//     while (heightLeft > 0) {
+//       position = heightLeft - imgHeight
+//       pdf.addPage()
+//       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+//       heightLeft -= pageHeight
+//     }
+//
+//     // 保存PDF
+//     pdf.save(`旅行计划_${formData.fromCity}到${formData.toCity}.pdf`)
+//
+//     // 关闭加载提示
+//     loadingInstance.close()
+//     ElMessage.success('PDF导出成功')
+//   } catch (error) {
+//     console.error('导出PDF失败:', error)
+//     ElMessage.error('导出PDF失败，请稍后重试')
+//   }
+// }
+//
+// // 导出为图片
+// const exportToImage = async () => {
+//   if (!planResult.value) {
+//     ElMessage.warning('没有可导出的行程')
+//     return
+//   }
+//
+//   try {
+//     // 显示加载提示
+//     const loadingInstance = ElMessage({
+//       type: 'info',
+//       message: '正在生成图片，请稍候...',
+//       duration: 0
+//     })
+//
+//     // 获取要导出的DOM元素
+//     const element = document.querySelector('.result-container')
+//
+//     // 使用html2canvas将DOM元素转换为canvas
+//     const canvas = await html2canvas(element, {
+//       scale: 2, // 提高清晰度
+//       useCORS: true, // 允许加载跨域图片
+//       logging: false,
+//       backgroundColor: '#ffffff'
+//     })
+//
+//     // 转换为图片并下载
+//     canvas.toBlob((blob) => {
+//       saveAs(blob, `旅行计划_${formData.fromCity}到${formData.toCity}.png`)
+//
+//       // 关闭加载提示
+//       loadingInstance.close()
+//       ElMessage.success('图片导出成功')
+//     })
+//   } catch (error) {
+//     console.error('导出图片失败:', error)
+//     ElMessage.error('导出图片失败，请稍后重试')
+//   }
+// }
+//
+// // 导出为文本
+// const exportToText = () => {
+//   if (!planResult.value) {
+//     ElMessage.warning('没有可导出的行程')
+//     return
+//   }
+//
+//   try {
+//     // 构建文本内容
+//     let content = `${formData.fromCity}到${formData.toCity}的${formData.maxDays}天行程\n\n`
+//
+//     // 添加交通信息
+//     content += `城际交通:\n`
+//     content += `出发: ${planResult.value.transportEstimate.fromStation}\n`
+//     content += `到达: ${planResult.value.transportEstimate.toStation}\n`
+//     content += `交通方式: ${getTransportTypeText(planResult.value.transportEstimate.type)}\n`
+//     content += `预计距离: ${planResult.value.transportEstimate.estimatedDistance.toFixed(1)} 公里\n`
+//     content += `预计费用: ¥${planResult.value.transportEstimate.estimatedPrice.toFixed(2)}\n\n`
+//
+//     // 添加每日行程
+//     planResult.value.routes.forEach(route => {
+//       content += `第 ${route.day} 天:\n`
+//
+//       route.spots.forEach(item => {
+//         content += `${item.assignedTimeSlot}: ${item.spot.name}\n`
+//         content += `  标签: ${item.spot.tags.join(', ')}\n`
+//         content += `  价格: ${item.spot.price > 0 ? `¥${item.spot.price}` : '免费'}\n`
+//         content += `  评分: ${item.spot.rating.toFixed(1)}\n`
+//         content += `  销量: ${item.spot.sales}人去过\n\n`
+//       })
+//     })
+//
+//     // 创建Blob对象
+//     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+//
+//     // 下载文件
+//     saveAs(blob, `旅行计划_${formData.fromCity}到${formData.toCity}.txt`)
+//
+//     ElMessage.success('文本导出成功')
+//   } catch (error) {
+//     console.error('导出文本失败:', error)
+//     ElMessage.error('导出文本失败，请稍后重试')
+//   }
+// }
 
 onMounted(() => {
   fetchCities()
@@ -1023,6 +1599,9 @@ onMounted(() => {
 .el-tag:hover {
   transform: translateY(-5px); /* 增强悬停效果 */
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12); /* 增强悬停时阴影 */
+}
+:root {
+  --primary-color-rgb: 59, 130, 246; /* Tailwind 的 blue-500，对应 #3B82F6 */
 }
 
 .active-tag {
