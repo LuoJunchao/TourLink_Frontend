@@ -19,7 +19,7 @@ const searchType = ref('content')
 const filter = reactive({
   region: '',
   type: '',
-  sort: 'latest'
+  sort: 'viewCount'  // 默认按浏览量排序
 })
 
 // 分页
@@ -82,6 +82,14 @@ const searchTypes = [
 
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
+// 排序选项
+const sortOptions = [
+  { value: 'viewCount', label: '最多浏览' },
+  { value: 'like', label: '最多点赞' },
+  { value: 'comment', label: '最多评论' },
+  { value: 'new', label: '最新发布' }
+]
+
 // 获取攻略数据的函数
 const fetchGuides = async (params = {}) => {
   loading.value = true
@@ -98,7 +106,7 @@ const fetchGuides = async (params = {}) => {
     } else {
       // 获取所有博客，同样传递分页参数
       response = await socialApi.getBlogRanking(
-        'ViewCount',
+        filter.sort,
         '',
         currentPage.value - 1,
       )
@@ -157,6 +165,13 @@ const handleSizeChange = (size) => {
 // 处理页码变化
 const handleCurrentChange = (page) => {
   currentPage.value = page
+  fetchGuides()
+}
+
+// 处理排序变化
+const handleSortChange = (value) => {
+  filter.sort = value
+  currentPage.value = 1 // 重置到第一页
   fetchGuides()
 }
 
@@ -249,6 +264,18 @@ onMounted(() => {
     </div>
 
     <div class="container">
+      <!-- 添加排序选项 -->
+      <div class="filter-section">
+        <el-select v-model="filter.sort" @change="handleSortChange" placeholder="排序方式">
+          <el-option
+            v-for="option in sortOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </div>
+
       <!-- 攻略列表 -->
       <div class="guides-list">
         <el-row :gutter="20">
@@ -468,6 +495,12 @@ onMounted(() => {
 .pagination {
   margin-top: 2rem;
   text-align: center;
+}
+
+.filter-section {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media screen and (max-width: 768px) {
