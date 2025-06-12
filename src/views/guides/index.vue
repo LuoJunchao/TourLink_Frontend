@@ -31,33 +31,6 @@ const loading = ref(false) // 添加加载状态
 // 攻略数据
 const guides = ref([])
 
-/* // 处理点赞
-const handleLike = async (guideId) => {
-  if (!userStore.isLoggedIn) {
-    ElMessage.warning('请先登录')
-    return
-  }
-  
-  try {
-    const guide = guides.value.find(g => g.id === guideId)
-    console.log(Number(guideId), userStore.userId,typeof String(userStore.userId));
-    if (guide) {
-      if (guide.isLiked) {
-        await socialApi.unlikeBlog(Number(guideId), String(userStore.userId))
-        guide.likes--
-      } else {
-        await socialApi.likeBlog(Number(guideId), String(userStore.userId))
-        guide.likes++
-      }
-      guide.isLiked = !guide.isLiked
-    }
-  } catch (error) {
-    console.error('点赞操作失败:', error)
-    ElMessage.error('操作失败，请稍后重试')
-  }
-} */
-
-
 // 查看攻略详情
 const viewGuideDetail = async (guideId) => {
   try {
@@ -304,7 +277,7 @@ onMounted(() => {
               
               <!-- 互动区域 -->
               <div class="interaction-area">
-                <div class="interaction-btn" :class="{ active: guide.isLiked }">
+                <div class="interaction-btn">
                   <el-icon><Star /></el-icon>
                   <span>{{ guide.likes }}</span>
                 </div>
@@ -456,6 +429,7 @@ onMounted(() => {
   margin-bottom: 1rem;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
