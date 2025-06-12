@@ -198,16 +198,109 @@ const getRecommendations = async () => {
   } catch (error) {
     console.error("获取推荐失败:", error);
     ElMessage.error("获取推荐失败，将显示默认景点");
-    fetchGuides()
   } finally {
     loading.value = false;
   }
 };
 
+
+const fetchGuidesWithRecommendation = async (params = {}) => {
+  loading.value = true;
+  try {
+    let blogs = [];
+
+    // 先尝试推荐（仅登录用户）
+    if (isLoggedIn.value) {
+      try {
+        const userId = userStore.userId;
+        const response = await fetch("http://localhost:8000/recommend_blogs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            top_k_tags: 5,
+            top_k_attractions: 8,
+            alpha: 0.8
+          })
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const result = await response.json();
+
+        if (result.data && result.data.length > 0) {
+          console.log("推荐结果:", result.data);
+          blogs = await socialApi.getBlogsByIds(result.data);
+        } else {
+          console.warn("推荐为空，使用默认博客");
+        }
+      } catch (err) {
+        console.error("推荐失败:", err);
+      }
+    }
+
+    // 如果没有成功获取推荐，使用默认逻辑
+    if (blogs.length === 0) {
+      let response;
+      if (params.keyword) {
+        response = await socialApi.searchBlogs(
+          params.keyword,
+          params.searchType || searchType.value,
+          currentPage.value - 1
+        );
+      } else {
+        response = await socialApi.getBlogRanking(
+          "ViewCount",
+          "",
+          currentPage.value - 1
+        );
+      }
+      blogs = response.content || [];
+      total.value = response.totalElements || 0;
+    }
+
+    // 获取所有博客作者信息
+    const userPromises = blogs.map(blog =>
+      blog.userId
+        ? userApi.getUserInfo(blog.userId).catch(error => {
+            console.error(`获取用户 ${blog.userId} 信息失败:`, error);
+            return null;
+          })
+        : Promise.resolve(null)
+    );
+    const userInfos = await Promise.all(userPromises);
+
+    // 合并博客和用户信息
+    guides.value = blogs.map((blog, index) => {
+      const userInfo = userInfos[index];
+      return {
+        id: blog.blogId,
+        username: userInfo ? (userInfo.username || userInfo.name || "匿名用户") : "匿名用户",
+        userAvatar: userInfo ? (userInfo.avatar || "/src/assets/images/avatars/default.jpg") : "/src/assets/images/avatars/default.jpg",
+        publishTime: blog.publishTime ? new Date(blog.publishTime).toLocaleDateString() : "未知时间",
+        title: blog.title || "无标题",
+        content: blog.content ? blog.content.substring(0, 100) + "..." : "",
+        coverImage: blog.coverImage || "/src/assets/images/guides/default.jpg",
+        likes: blog.likeCount || 0,
+        comments: blog.commentCount || 0,
+        isLiked: blog.isLiked || false
+      };
+    });
+
+  } catch (error) {
+    console.error("获取攻略失败:", error);
+    ElMessage.error("获取攻略失败，请稍后重试");
+    guides.value = [];
+  } finally {
+    loading.value = false;
+  }
+};
+
+
 // 页面加载时获取数据
 onMounted(() => {
-  getRecommendations()
-
+  fetchGuidesWithRecommendation()
 })
 </script>
 
