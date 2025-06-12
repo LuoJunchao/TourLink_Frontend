@@ -36,18 +36,6 @@
             </el-col>
 
             <el-col :xs="24" :sm="24" :md="12">
-              <el-form-item label="预算" prop="budget">
-                <el-slider
-                  v-model="formData.budget"
-                  :min="0"
-                  :max="10000"
-                  :step="100"
-                  :format-tooltip="value => `${value}元`"
-                />
-              </el-form-item>
-            </el-col>
-
-            <el-col :xs="24" :sm="24" :md="12">
               <el-form-item label="出发地" prop="fromCity">
                 <el-select
                   v-model="formData.fromCity"
