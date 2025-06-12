@@ -158,7 +158,7 @@
 
       <!-- 结果为空时显示 -->
       <el-empty 
-        v-if="showResult && (!planResult || !planResult.routes || planResult.routes.length === 0)" 
+        v-if="showResult && (!planResult || !planResult.dailyRoutes || planResult.dailyRoutes.length === 0)"
         description="未找到合适的行程规划" 
         :image-size="200"
       >
@@ -169,7 +169,7 @@
       </el-empty>
       
       <!-- 结果展示区域 -->
-      <div v-if="showResult && planResult && planResult.routes && planResult.routes.length > 0" class="result-container">
+      <div v-if="showResult && planResult && planResult.dailyRoutes && planResult.dailyRoutes.length > 0" class="result-container">
         <div class="result-header">
           <h2>您的旅行计划</h2>
           <div class="result-actions">
@@ -197,23 +197,23 @@
           </template>
           <div class="transport-info">
             <div class="transport-route">
-              <div class="station">{{ planResult.transport.fromStation }}</div>
+              <div class="station">{{ planResult.transportEstimate.fromStation }}</div>
               <div class="transport-arrow">
-                <span class="transport-type">{{ getTransportTypeText(planResult.transport.type) }}</span>
+                <span class="transport-type">{{ getTransportTypeText(planResult.transportEstimate.type) }}</span>
                 <el-divider direction="horizontal">
                   <i class="el-icon-right"></i>
                 </el-divider>
               </div>
-              <div class="station">{{ planResult.transport.toStation }}</div>
+              <div class="station">{{ planResult.transportEstimate.toStation }}</div>
             </div>
             <div class="transport-details">
               <div class="detail-item">
                 <span class="label">预计距离:</span>
-                <span class="value">{{ planResult.transport.distanceKm.toFixed(1) }} 公里</span>
+                <span class="value">{{ planResult.transportEstimate.estimatedDistance.toFixed(1) }} 公里</span>
               </div>
               <div class="detail-item">
                 <span class="label">预计费用:</span>
-                <span class="value">¥{{ planResult.transport.estimatedPrice.toFixed(2) }}</span>
+                <span class="value">¥{{ planResult.transportEstimate.estimatedPrice.toFixed(2) }}</span>
               </div>
             </div>
           </div>
@@ -223,7 +223,7 @@
         <div class="daily-routes">
           <el-timeline>
             <el-timeline-item 
-              v-for="route in planResult.routes" 
+              v-for="route in planResult.dailyRoutes"
               :key="route.day"
               :timestamp="`第 ${route.day} 天`"
               placement="top"
@@ -433,31 +433,33 @@ const handleSubmit = async () => {
     ElMessage.warning('出发城市和目的地不能相同')
     return
   }
-
-  if (formData.preference.selectedTags.length === 0) {
-    ElMessage.warning('请至少选择一个偏好标签')
-    return
-  }
   
   if (!formData.dateRange || formData.dateRange.length !== 2) {
     ElMessage.warning('请选择旅行日期')
     return
   }
-
+  let userId;
+  userId = await userApi.getCurrentUser();
   loading.value = true
   try {
     // 构建请求参数
+    const transportMap = {
+      train: 'TRAIN',
+      plane: 'AIRPORT'
+    };
     const requestData = {
       fromCity: formData.fromCity,
       toCity: formData.toCity,
       maxDays: calculatedDays.value, // 使用计算得到的天数
+      userId: userId,
+      transportMode: transportMap[formData.transportation[0]] || '',
       preference: {
         selectedTags: formData.preference.selectedTags,
         // 为每个标签设置相同的权重
-        tagWeights: Object.fromEntries(formData.preference.selectedTags.map(tag => [tag, 1]))
+        tagWeights: null
       }
     }
-
+    console.log(requestData);
     // 调用API
     const result = await routingApi.createItinerary(requestData)
     planResult.value = result
@@ -521,8 +523,8 @@ const saveItinerary = () => {
       toCity: formData.toCity,
       dateRange: formData.dateRange,
       createdAt: new Date().toISOString(),
-      routes: planResult.value.routes,
-      transport: planResult.value.transport
+      routes: planResult.value.dailyRoutes,
+      transport: planResult.value.transportEstimate
     }
     
     // 获取已保存的行程
@@ -674,11 +676,11 @@ const exportToText = () => {
     
     // 添加交通信息
     content += `城际交通:\n`
-    content += `出发: ${planResult.value.transport.fromStation}\n`
-    content += `到达: ${planResult.value.transport.toStation}\n`
-    content += `交通方式: ${getTransportTypeText(planResult.value.transport.type)}\n`
-    content += `预计距离: ${planResult.value.transport.distanceKm.toFixed(1)} 公里\n`
-    content += `预计费用: ¥${planResult.value.transport.estimatedPrice.toFixed(2)}\n\n`
+    content += `出发: ${planResult.value.transportEstimate.fromStation}\n`
+    content += `到达: ${planResult.value.transportEstimate.toStation}\n`
+    content += `交通方式: ${getTransportTypeText(planResult.value.transportEstimate.type)}\n`
+    content += `预计距离: ${planResult.value.transportEstimate.estimatedDistance.toFixed(1)} 公里\n`
+    content += `预计费用: ¥${planResult.value.transportEstimate.estimatedPrice.toFixed(2)}\n\n`
     
     // 添加每日行程
     planResult.value.routes.forEach(route => {
@@ -1023,6 +1025,9 @@ onMounted(() => {
 .el-tag:hover {
   transform: translateY(-5px); /* 增强悬停效果 */
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12); /* 增强悬停时阴影 */
+}
+:root {
+  --primary-color-rgb: 59, 130, 246; /* Tailwind 的 blue-500，对应 #3B82F6 */
 }
 
 .active-tag {
