@@ -259,15 +259,15 @@ const handleLikeBlog = async () => {
   
   try {
     // 获取当前点赞状态
-    const isLiked = await socialApi.getLikeStatus(guide.value.id, userStore.userId)
+    const isLiked = await socialApi.getLikeStatus(route.params.id, userStore.userId)
     
     if (isLiked) {
       // 如果已经点赞，则取消点赞
-      await socialApi.unlikeBlog(guide.value.id, userStore.userId)
+      await socialApi.unlikeBlog(route.params.id, userStore.userId)
       guide.value.likes--
     } else {
       // 如果未点赞，则添加点赞
-      await socialApi.likeBlog(guide.value.id, userStore.userId)
+      await socialApi.likeBlog(route.params.id, userStore.userId)
       guide.value.likes++
     }
     guide.value.isLiked = !isLiked
@@ -291,13 +291,12 @@ const fetchGuideDetail = async () => {
     let isLiked = false
     if (userStore.isLoggedIn) {
       try {
-        isLiked = await socialApi.checkUserLiked(route.params.id, userStore.userId)
+        isLiked = await socialApi.getLikeStatus(route.params.id, userStore.userId)
       } catch (error) {
         console.error('检查点赞状态失败:', error)
       }
     }
     
-    // 获取作者信息
     // 获取作者信息
     let authorName = '匿名用户'
     let authorAvatar = '/src/assets/images/user.jpg'

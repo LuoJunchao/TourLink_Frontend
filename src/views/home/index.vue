@@ -280,11 +280,11 @@ const getRecommendations = async () => {
               <el-icon class="search-icon" @click="handleSearch"><Search /></el-icon>
             </template>
           </el-input>
-          <el-select v-model="searchType" class="search-type-select" >
+          <!-- <el-select v-model="searchType" class="search-type-select" >
             <el-option label="景点名称" value="name" />
             <el-option label="地区" value="region" />
             <el-option label="标签" value="tag" />
-          </el-select>
+          </el-select> -->
         </div>
       </div>
     </div>
