@@ -204,7 +204,7 @@ const fetchUserCollections = async () => {
     }
     
     // 使用attractionApi获取用户收藏的景点
-    const favorites = await fetch(`http://localhost:9082/api/attraction-favorites/user/${userId}`,{
+    const favorites = await fetch(`http://localhost:9082/attraction/api/attraction-favorites/user/${userId}`,{
       method: "GET"
     })
     
@@ -308,7 +308,7 @@ const removeCollection = async (spotId) => {
     }
     
     // 使用attractionApi取消收藏
-    await fetch(`http://localhost:9082/api/attraction-favorites/attraction/${spotId}/user/${userId}`,{
+    await fetch(`http://localhost:9082/attraction/api/attraction-favorites/attraction/${spotId}/user/${userId}`,{
       method: 'DELETE'
     })
     
