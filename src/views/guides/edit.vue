@@ -45,6 +45,62 @@
           </el-select>
         </el-form-item> -->
 
+        <!-- 关联景点 -->
+        <el-form-item label="关联景点" prop="spotIds">
+          <div class="spot-selection-container">
+            <!-- 搜索框 -->
+            <el-input
+              v-model="spotSearch"
+              placeholder="搜索景点..."
+              clearable
+              class="spot-search"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+
+            <!-- 景点列表 -->
+            <div class="spot-list">
+              <div
+                v-for="spot in filteredSpots"
+                :key="spot.id"
+                class="spot-card"
+                :class="{ selected: isSpotSelected(spot.id) }"
+                @click.stop="toggleSpotSelection(spot)"
+              >
+                <div class="spot-info">
+                  <div class="spot-name">{{ spot.name }}</div>
+                </div>
+                <el-button
+                  size="small"
+                  :type="isSpotSelected(spot.id) ? 'danger' : 'primary'"
+                  
+                >
+                  {{ isSpotSelected(spot.id) ? '移除' : '选择' }}
+                </el-button>
+              </div>
+            </div>
+
+            <!-- 已选景点 -->
+            <div class="selected-spots" v-if="blogForm.spotIds.length > 0">
+              <div class="selected-title">已选景点 ({{ blogForm.spotIds.length }}/5):</div>
+              <div class="tag-container">
+                <el-tag
+                  v-for="id in blogForm.spotIds"
+                  :key="id"
+                  closable
+                  @close="removeSpot(id)"
+                  type="success"
+                  effect="plain"
+                >
+                  {{ getSpotName(id) }}
+                </el-tag>
+              </div>
+            </div>
+          </div>
+        </el-form-item>
+
         <!-- 正文编辑器 -->
         <el-form-item label="正文" prop="content">
           <div class="editor-container">
@@ -67,11 +123,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
+import { Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { socialApi } from '@/api/social' // 导入社交API
+import { attractionApi } from '@/api/attraction' // 导入景点API
 import { useUserStore } from '@/stores/user' // 导入用户存储
 import { processContent } from '@/utils/contentUtils' // 导入内容处理工具
 
@@ -86,7 +144,64 @@ const isEdit = ref(!!route.params.id)
 const blogForm = ref({
   title: '',
   content: '',
+  spotIds: [] // 确保初始化为空数组
 })
+
+// 景点搜索
+const spotSearch = ref('')
+const filteredSpots = computed(() => {
+  return favoriteSpots.value.filter(spot =>
+    spot.name.toLowerCase().includes(spotSearch.value.toLowerCase()))
+})
+
+// 检查景点是否已选
+const isSpotSelected = (id) => {
+  return blogForm.value.spotIds.includes(String(id))
+}
+
+// 获取景点名称
+const getSpotName = (id) => {
+  return favoriteSpots.value.find(s => s.id === id)?.name || '未知景点'
+}
+const toggleSpotSelection = (spot) => {
+  // 检查是否已达上限且不是取消选择
+  if (blogForm.value.spotIds.length >= 5 && 
+      !blogForm.value.spotIds.includes(String(spot.id))) {
+    ElMessage.warning('最多只能关联5个景点')
+    return
+  }
+  
+  const spotId = String(spot.id)
+  const index = blogForm.value.spotIds.indexOf(spotId)
+  
+  if (index > -1) {
+    blogForm.value.spotIds.splice(index, 1)
+  } else {
+    blogForm.value.spotIds.push(spotId)
+  }
+}
+
+// 记录景点点击
+const logSpotClick = (spotId) => {
+  console.log('点击了景点:', spotId)
+}
+
+// 移除已选景点
+const removeSpot = (id) => {
+  if (!id) return
+  
+  blogForm.value.spotIds = blogForm.value.spotIds
+    .filter(spotId => spotId && spotId !== 'undefined' && spotId !== 'null')
+    .filter(spotId => spotId !== String(id)) // 确保类型一致
+}
+
+// 调试观察spotIds变化
+watch(() => blogForm.value.spotIds, (newVal) => {
+  console.log('spotIds changed:', newVal)
+}, { deep: true })
+
+// 用户收藏的景点列表
+const favoriteSpots = ref([])
 
 // 内容处理选项
 const contentProcessOptions = ref({
@@ -194,10 +309,12 @@ const submitBlog = async () => {
           userId: userStore.userId,
           title: blogForm.value.title,
           content: blogForm.value.content,
+          spotIds: blogForm.value.spotIds
         })
       })
     }
 
+    console.log('提交的spotIds:', blogForm.value.spotIds)
     if (result.blogId == -1) {
       ElMessage.success('发布成功')
     }
@@ -240,12 +357,53 @@ const cancel = () => {
   router.back()
 }
 
-/* // 如果是编辑模式，获取博客详情
-onMounted(() => {
+// 获取用户收藏的景点
+onMounted(async () => {
+  console.log('开始加载收藏景点...')
+  if (userStore.isLoggedIn) {
+    try {
+      // 1. 获取收藏列表
+      const favorites = await attractionApi.getFavorites(userStore.userId)
+      console.log('收藏景点ID:', favorites)
+      
+      if (!Array.isArray(favorites)) {
+        throw new Error('收藏数据格式错误')
+      }
+
+      // 2. 提取attractionId数组
+      const attractionIds = favorites.map(f => f.attractionId)
+      
+      // 3. 并行获取所有景点详情
+      const attractions = await Promise.all(
+        attractionIds.map(id =>
+          attractionApi.getAttractionDetail(id)
+            .catch(e => {
+              console.error(`获取景点${id}详情失败:`, e)
+              return { id, name: '未命名景点' }
+            })
+        )
+      )
+      
+      // 4. 处理返回的数据格式
+      favoriteSpots.value = attractions.map(att => ({
+        id: String(att.id), // 确保id为字符串
+        attractionId: String(att.id),
+        name: att.name || '未命名景点'
+      }))
+      console.log('favoriteSpots loaded:', favoriteSpots.value)
+      console.log('favoriteSpots loaded:', favoriteSpots.value)
+      
+    } catch (error) {
+      console.error('获取收藏景点失败:', error)
+      favoriteSpots.value = []
+    }
+  }
+  
+  // 如果是编辑模式，获取博客详情
   if (isEdit.value) {
     getBlogDetail(route.params.id)
   }
-}) */
+})
 </script>
 
 <style scoped>
